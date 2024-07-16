@@ -5,6 +5,7 @@
 # Session Data files
 .RData
 .RDataTmp
+.idea
 
 # User-specific files
 .Ruserdata
@@ -47,3 +48,18 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Other generated files
+*.html
+*.log
+*.png
+*.csv
+*.txt
+
+# Temporary or backup files
+*~
+.*.swp
+
+# OS files
+.DS_Store
+._.DS_Store

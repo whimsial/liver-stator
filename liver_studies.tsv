@@ -1,0 +1,7 @@
+Study	URL	Healthy	MASLD	MASH	MASLD+MASH	N cells	RNA-seq	Data URL
+Ramachandran et al (2019) 	https://pubmed.ncbi.nlm.nih.gov/31597160/	5		5		"100,000"	Raw	https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE136103
+Guilliams et al. (2022) 	https://pubmed.ncbi.nlm.nih.gov/35021063/	7	7	5	18	"100,000"	Possibly QCed as stated in the paper	https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE192742
+Xiao et al. (2023) 								
+Alvarez et al. (2022) 	https://pubmed.ncbi.nlm.nih.gov/35581624/	3	3 NAFLD and NASH -related liver cancer + 2 other published cohorts			Different	Raw counts matrix	https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi
+Andrews et al. (2022) 	https://pubmed.ncbi.nlm.nih.gov/34792289/	24	3 PBC	10 PSC		"73,295"	Raw counts matrix	https://cellxgene.cziscience.com/collections/0c8a364b-97b5-4cc8-a593-23c38c6f0ac5
+Wang et al. (2023) 	https://pubmed.ncbi.nlm.nih.gov/36599008/	3	9			?	Raw + processed	https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE212837
