@@ -1,6 +1,7 @@
 ## download specified study
-download.study <- function(this.study, studies.dt) {
-    this.study.name <- studies.dt[eval(this.study), gsub("^(\\w+).*", "\\1", Study)]
+download.study <- function(this.study, studies.dt, root.dir) {
+    this.study.name <- studies.dt[eval(this.study),
+                                  gsub("^(\\w+).*", "\\1", Study)]
     this.archive.url <- studies.dt[eval(this.study), `Data URL`]
     this.filelist.url <- studies.dt[eval(this.study),
                                     gsub("(.*suppl).*", "\\1", `Data URL`)]

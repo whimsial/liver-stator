@@ -1,26 +1,19 @@
 library(data.table)
 
 ## install packages for QC
+## these packages are only installable with gmm/apps/R/4.0.2.gcc.9.4.0
 if (FALSE) {
-    ## manually set C++ standard (make sure gcc v7+ is loaded as module)
-    Sys.setenv("PKG_CXXFLAGS"="-std=c++17")
-
     ## install in specified user library
     my.lib <- .libPaths()[[1]]
-    BiocManager::install("rhdf5", lib=my.lib, ask=FALSE)
+    BiocManager::install("S4Arrays", version=3.12, lib=my.lib, ask=FALSE)
+    BiocManager::install("S4Vectors", lib=my.lib, ask=FALSE)
     BiocManager::install("DropletUtils", lib=my.lib, ask=FALSE)
     BiocManager::install("Seurat", lib=my.lib, ask=FALSE)
-    BiocManager::install("S4Vectors", lib=my.lib, ask=FALSE)
-    install.packages("ggExtra", lib=my.lib, quiet=TRUE)
-    install.packages("dplyr", lib=my.lib, quiet=TRUE)
-    install.packages("ggplot2", lib=my.lib, quiet=TRUE)
-    install.packages("xlsx", lib=my.lib, quiet=TRUE)
-    install.packages("stringr", lib=my.lib, quiet=TRUE)
+    install.packages(c("ggExtra", "dplyr", "ggplot2", "xlsx", "stringr",
+                       "rjson", "randomcoloR"), lib=my.lib, quiet=TRUE)
     BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
-    install.packages("rjson", lib=my.lib, quiet=TRUE)
     BiocManager::install("loomR", lib=my.lib, ask=FALSE)
     BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
-    install.packages("randomcoloR", lib=my.lib, quiet=TRUE)
 }
 
 root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"

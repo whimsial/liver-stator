@@ -3,6 +3,7 @@
 library(DropletUtils)
 
 ## Set working directory
+study.dir <- file.path(root.dir, this.study.name)
 setwd("/Volumes/khamseh-lab/ava/ME_scRNA/")
 meta_data <- read.csv("me_metadata.txt")
 files<-c()
