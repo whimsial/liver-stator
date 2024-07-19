@@ -10,8 +10,10 @@ if (FALSE) {
     BiocManager::install("rhdf5", lib=my.lib, ask=FALSE)
     BiocManager::install(c("DropletUtils", "Seurat", "S4Vectors"),
                          lib=my.lib, ask=FALSE)
-    BiocManager::install(c("sctransform", "loomR", "sctransform"),
-                         lib=my.lib, ask=FALSE)
+    ## loomR has to be installed from GitHub
+    devtools::install_github(repo="hhoeflin/hdf5r")
+    devtools::install_github(repo="mojaveazure/loomR", ref="develop")
+    BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
 }
 
 # root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"
