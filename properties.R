@@ -1,7 +1,31 @@
-root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"
+library(data.table)
 
-## download Ramachandran et al (2019)
-ramachandran.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/GSE136103_RAW.tar"
-ramach.file <- "GSE136103_RAW.tar"
-curl.cmd <- paste0("curl %s --output %s --retry 100 --retry-delay 2 -s")
-system(sprintf(curl.cmd, ramachandran.url, file.path(root.dir, ramach.file)))
+## install packages for QC
+if (FALSE) {
+    ## manually set C++ standard (make sure gcc v7+ is loaded as module)
+    Sys.setenv("PKG_CXXFLAGS"="-std=c++17")
+
+    ## install in specified user library
+    my.lib <- .libPaths()[[1]]
+    BiocManager::install("rhdf5", lib=my.lib, ask=FALSE)
+    BiocManager::install("DropletUtils", lib=my.lib, ask=FALSE)
+    BiocManager::install("Seurat", lib=my.lib, ask=FALSE)
+    BiocManager::install("S4Vectors", lib=my.lib, ask=FALSE)
+    install.packages("ggExtra", lib=my.lib, quiet=TRUE)
+    install.packages("dplyr", lib=my.lib, quiet=TRUE)
+    install.packages("ggplot2", lib=my.lib, quiet=TRUE)
+    install.packages("xlsx", lib=my.lib, quiet=TRUE)
+    install.packages("stringr", lib=my.lib, quiet=TRUE)
+    BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
+    install.packages("rjson", lib=my.lib, quiet=TRUE)
+    BiocManager::install("loomR", lib=my.lib, ask=FALSE)
+    BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
+    install.packages("randomcoloR", lib=my.lib, quiet=TRUE)
+}
+
+root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"
+codebase.dir <- file.path(root.dir, "liver-stator")
+
+## downloads
+studies.list.file <- file.path(codebase.dir, "liver_studies.tsv")
+studies.dt <- fread(studies.list.file)
