@@ -16,4 +16,9 @@ download.study <- function(this.study, studies.dt, root.dir) {
     curl.cmd <- paste0("curl %s --output %s --retry 100 --retry-delay 2 -s")
     system(sprintf(curl.cmd, this.archive.url, this.study.file))
     system(sprintf(curl.cmd, this.filelist.url, this.filelist.file))
+
+    study.properties <- list(name=this.study.name, dir=study.dir,
+                             study.file=this.study.file,
+                             study.file.list=this.filelist.file)
+    return(study.properties)
 }
