@@ -5,19 +5,19 @@ library(data.table)
 if (FALSE) {
     ## install in specified user library
     my.lib <- .libPaths()[[1]]
-    BiocManager::install("S4Arrays", version=3.12, lib=my.lib, ask=FALSE)
-    BiocManager::install("S4Vectors", lib=my.lib, ask=FALSE)
-    BiocManager::install("DropletUtils", lib=my.lib, ask=FALSE)
-    BiocManager::install("Seurat", lib=my.lib, ask=FALSE)
     install.packages(c("ggExtra", "dplyr", "ggplot2", "xlsx", "stringr",
                        "rjson", "randomcoloR"), lib=my.lib, quiet=TRUE)
-    BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
-    BiocManager::install("loomR", lib=my.lib, ask=FALSE)
-    BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
+    BiocManager::install("rhdf5", lib=my.lib, ask=FALSE)
+    BiocManager::install(c("DropletUtils", "Seurat", "S4Vectors"),
+                         lib=my.lib, ask=FALSE)
+    BiocManager::install(c("sctransform", "loomR", "sctransform"),
+                         lib=my.lib, ask=FALSE)
 }
 
-root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"
-codebase.dir <- file.path(root.dir, "liver-stator")
+# root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"
+root.dir <- "/opt/datastore/aiakovliev/liver"
+# codebase.dir <- file.path(root.dir, "liver-stator")
+codebase.dir <- "~/repos/liver-stator"
 
 ## downloads
 studies.list.file <- file.path(codebase.dir, "liver_studies.tsv")
