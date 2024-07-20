@@ -7,6 +7,9 @@
 .RDataTmp
 .idea
 
+# Python virtual environment
+venv/
+
 # User-specific files
 .Ruserdata
 
@@ -55,6 +58,9 @@ rsconnect/
 *.png
 *.csv
 *.txt
+
+# Allow requirements.txt
+!requirements.txt
 
 # Temporary or backup files
 *~
