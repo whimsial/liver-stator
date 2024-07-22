@@ -25,6 +25,7 @@ meta[, sample := gsub("(GSM\\d+).*", "\\1", Name)]
 meta[, sample.dir := file.path(study$dir, sample)]
 meta <- meta[!grep(".tar", sample)]
 meta <- meta[!grep("blood|mouse", Name)]
+fwrite(meta, file=file.path(study$dir, "metadata.txt"))
 
 ## extract sample files and perform QC step 1
 source("qc/qc1_emptydrop.R")
