@@ -26,7 +26,7 @@ meta[, sample.dir := file.path(study$dir, sample)]
 meta <- meta[!grep(".tar", sample)]
 meta <- meta[!grep("blood|mouse", Name)]
 
-## QC step 1
+## extract sample files and perform QC step 1
 source("qc/qc1_emptydrop.R")
 
 this.study <- 2 ## Guilliams et al (2022)

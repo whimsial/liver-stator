@@ -3,28 +3,18 @@
 library(DropletUtils)
 
 prepare.10x.files <- function(this.meta, study) {
-    ## create sample subdirectory and symlink relevant files
+    ## create sample subdirectory and extract sample files
     this.sample.dir <- this.meta[, unique(sample.dir)]
-    sample.barcodes.file <- file.path(this.sample.dir, "barcodes.tsv")
-    sample.genes.file <- file.path(this.sample.dir, "genes.tsv")
-    sample.matrix.file <- file.path(this.sample.dir, "matrix.mtx")
+    this.archives <- file.path(study$dir, this.meta$Name)
+    this.extracts <- file.path(this.sample.dir,
+        gsub(".*(barcodes.tsv|genes.tsv|matrix.mtx).gz", "\\1", this.meta$Name))
 
     dir.create(this.sample.dir, showWarnings=FALSE)
-    if (!any(file.exists(this.meta[, file.path(this.sample.dir, Name)]))) {
-        file.symlink(this.meta[, file.path(study$dir, Name)],
-                     this.meta[, file.path(this.sample.dir, Name)])
-        file.rename(this.meta[grep("barcodes", Name), file.path(sample.dir, Name)],
-                    sample.barcodes.file)
-        file.rename(this.meta[grep("genes", Name), file.path(sample.dir, Name)],
-                    sample.genes.file)
-        file.rename(this.meta[grep("matrix", Name), file.path(sample.dir, Name)],
-                    sample.matrix.file)
-    }
+    cmd <- sprintf("gunzip -c %s > %s", this.archives, this.extracts)
+    for (this.cmd in cmd) system(this.cmd)
 
-    symlinks <- list(sample.barcodes.file=sample.barcodes.file,
-                     sample.genes.file=sample.genes.file,
-                     sample.matrix.file=sample.matrix.file)
-    return(symlinks)
+    this.meta[, extracts := this.extracts]
+    return(this.meta)
 }
 
 if (FALSE) this.sample <- "GSM4041150" ## for profiling we use only 1 sample
@@ -35,9 +25,10 @@ for (this.sample in meta[, unique(sample)]) {
     this.meta <- meta[sample==eval(this.sample)]
 
     ## create 1 subdirectory per sample and relevant symlinks
-    simlinks <- prepare.10x.files(this.meta, study)
+    this.meta <- prepare.10x.files(this.meta, study)
 
-    sample.barcodes <- fread(simlinks$sample.barcodes.file, header=FALSE)
+    sample.barcodes.file <- this.meta[grep("barcodes", extracts), extracts]
+    sample.barcodes <- fread(sample.barcodes.file, header=FALSE)
 
     ## read 10x experiment from sample dir
     sce <- read10xCounts(this.meta[, unique(sample.dir)])
