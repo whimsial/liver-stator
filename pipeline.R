@@ -30,5 +30,7 @@ fwrite(meta, file=file.path(study$dir, "metadata.txt"))
 ## extract sample files and perform QC step 1
 source("qc/qc1_emptydrop.R")
 
+## run QC_2RMdoublet.ipynb in Jupyter notebook
+
 this.study <- 2 ## Guilliams et al (2022)
 study <- download.study(this.study, studies.dt, root.dir)

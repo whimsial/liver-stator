@@ -13,9 +13,11 @@ download.study <- function(this.study, studies.dt, root.dir) {
     this.study.file <- file.path(study.dir, basename(this.archive.url))
     this.filelist.file <- file.path(study.dir, basename(this.filelist.url))
 
-    curl.cmd <- paste0("curl %s --output %s --retry 100 --retry-delay 2 -s")
-    system(sprintf(curl.cmd, this.archive.url, this.study.file))
-    system(sprintf(curl.cmd, this.filelist.url, this.filelist.file))
+    if (!file.exists(this.study.file)) {
+        curl.cmd <- paste0("curl %s --output %s --retry 100 --retry-delay 2 -s")
+        system(sprintf(curl.cmd, this.archive.url, this.study.file))
+        system(sprintf(curl.cmd, this.filelist.url, this.filelist.file))
+    }
 
     study.properties <- list(name=this.study.name, dir=study.dir,
                              study.file=this.study.file,
