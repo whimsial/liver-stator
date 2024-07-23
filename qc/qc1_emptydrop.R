@@ -4,7 +4,7 @@ library(DropletUtils)
 library(HDF5Array)
 
 if (FALSE) this.sample <- "GSM4041150" ## for profiling we use only 1 sample
-if (FALSE) this.sample <- "GSM5764242" ## for profiling we use only 1 sample
+if (FALSE) this.sample <- "GSM5764336" ## for profiling we use only 1 sample
 
 Cell <- NULL
 for (this.sample in meta[, unique(sample)]) {
@@ -36,7 +36,8 @@ for (this.sample in meta[, unique(sample)]) {
     if (study$name=="Guilliams") {
         this.extracts <- file.path(this.sample.dir, this.meta$Name)
         dir.create(this.sample.dir, showWarnings=FALSE)
-        file.symlink(this.archives, this.extracts)
+        if (!file.exists(this.extracts))
+            file.symlink(this.archives, this.extracts)
         this.meta[, extracts := this.extracts]
 
         ## read barcodes
@@ -63,8 +64,9 @@ for (this.sample in meta[, unique(sample)]) {
         return(NA)  ## Return NA on error
     })
 
-    if (is.na(e.out)) True_Cell <- colnames(my.count)
-    else {
+    if (class(e.out)!="DFrame")  {
+        True_Cell <- colnames(my.count)
+    } else {
         is.cell <- e.out$FDR <= 0.01
         is.cell[is.na(is.cell)] <- FALSE
         True_Cell <- colnames(my.count)[is.cell]
