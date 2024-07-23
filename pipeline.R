@@ -20,7 +20,6 @@ meta <- fread(study$study.file.list)
 stopifnot(all(basename(sample.files) %in% meta$Name))
 
 ## create dir path for each sample
-meta <- fread(study$study.file.list)
 meta[, sample := gsub("(GSM\\d+).*", "\\1", Name)]
 meta[, sample.dir := file.path(study$dir, sample)]
 meta <- meta[!grep(".tar", sample)]
@@ -32,5 +31,30 @@ source("qc/qc1_emptydrop.R")
 
 ## run QC_2RMdoublet.ipynb in Jupyter notebook
 
+## Process Guilliams et al (2022)
+## -----------------------------------------------------------------------------
 this.study <- 2 ## Guilliams et al (2022)
 study <- download.study(this.study, studies.dt, root.dir)
+
+## extract archive
+cmd <- sprintf("tar -xvf %s -C %s", study$study.file, study$dir)
+system(cmd)
+
+## study variable should be a list with at least 2 elements:
+## $dir -> name of the directory containing extract from the GEO archive
+## $study.file.list -> content of filelist.txt which contains a list of all
+##                     files for the study (downloaded separately from GEO)
+sample.files <- list.files(study$dir, pattern="*.tsv.gz", full.names=TRUE)
+meta <- fread(study$study.file.list)
+stopifnot(all(basename(sample.files) %in% meta$Name))
+
+## create dir path for each sample
+meta[, sample := gsub("(GSM\\d+).*", "\\1", Name)]
+meta[, sample.dir := file.path(study$dir, sample)]
+meta <- meta[!grep(".tar", sample)]
+meta <- meta[Type=="H5"]
+fwrite(meta, file=file.path(study$dir, "metadata.txt"))
+
+## extract sample files and perform QC step 1
+source("qc/qc1_emptydrop.R")
+
