@@ -26,15 +26,32 @@ meta <- meta[!grep(".tar", sample)]
 meta <- meta[!grep("blood|mouse", Name)]
 fwrite(meta, file=file.path(study$dir, "metadata.txt"))
 
-## extract sample files and perform QC step 1
+## extract sample files and perform QC step 1: detection of empty drops
 source("qc/qc1_emptydrop.R")
 
-## run QC_2RMdoublet.ipynb in Jupyter notebook
+## run QC_2RMdoublet.ipynb in Jupyter notebook: detection of duplets
+
+## perform QC step 3
+
 
 ## Process Guilliams et al (2022)
 ## -----------------------------------------------------------------------------
 this.study <- 2 ## Guilliams et al (2022)
 study <- download.study(this.study, studies.dt, root.dir)
+## download soft meta data to map samples
+soft.url <- gsub("(suppl.*)", "soft/GSE192742_family.soft.gz",
+                 studies.dt[this.study, `Data URL`])
+soft.file <- file.path(study$dir, "samples.soft")
+sample.map <- parse.soft(soft.url, soft.file)
+sample.map <- sample.map[grep("(Whole Liver)?(Human)", sample.title)]
+sample.map[, sample.id := gsub(".*(H\\d+).*", "\\1", sample.title)]
+
+## sample ids for healthy, steatosis and fibrosis
+healthy <- "H30"
+steatosis <- c("H32", "H35", "H37") ## steatosis > 15%
+fibrosis <- c("H33", "H36", "H37", "H38") ## any mention of fibrosis
+selected.samples <- sample.map[sample.id %in% c(healthy, steatosis, fibrosis),
+                               sample]
 
 ## extract archive
 cmd <- sprintf("tar -xvf %s -C %s", study$study.file, study$dir)
@@ -44,7 +61,7 @@ system(cmd)
 ## $dir -> name of the directory containing extract from the GEO archive
 ## $study.file.list -> content of filelist.txt which contains a list of all
 ##                     files for the study (downloaded separately from GEO)
-sample.files <- list.files(study$dir, pattern="*.tsv.gz", full.names=TRUE)
+sample.files <- list.files(study$dir, pattern="*.txt.gz", full.names=TRUE)
 meta <- fread(study$study.file.list)
 stopifnot(all(basename(sample.files) %in% meta$Name))
 
@@ -53,8 +70,9 @@ meta[, sample := gsub("(GSM\\d+).*", "\\1", Name)]
 meta[, sample.dir := file.path(study$dir, sample)]
 meta <- meta[!grep(".tar", sample)]
 meta <- meta[Type=="H5"]
+## keep only files for relevant samples
+meta <- meta[sample %in% selected.samples]
 fwrite(meta, file=file.path(study$dir, "metadata.txt"))
 
 ## extract sample files and perform QC step 1
 source("qc/qc1_emptydrop.R")
-

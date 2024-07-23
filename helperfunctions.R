@@ -24,3 +24,25 @@ download.study <- function(this.study, studies.dt, root.dir) {
                              study.file.list=this.filelist.file)
     return(study.properties)
 }
+
+## Get and parse GEO soft meta data into R data.table
+parse.soft <- function(soft.url, soft.file) {
+    ## download soft file
+    cmd <- sprintf("curl %s --output %s --retry 100 --retry-delay 2 -s",
+                   soft.url, paste0(soft.file, ".gz"))
+    system(cmd)
+
+    ## extract and read into R
+    cmd <- sprintf("gunzip -c %s > %s", paste0(soft.file, ".gz"), soft.file)
+    system(cmd)
+    tmp <- readLines(soft.file)
+
+    ## grep ^SAMPLE and !Sample_title key words
+    dt <- data.table(sample=tmp[grep("\\^SAMPLE", tmp)],
+                     sample.title=tmp[grep("\\!Sample_title", tmp)])
+
+    ## cleanup the strings
+    dt[, sample := gsub("\\^SAMPLE = ", "", sample)]
+    dt[, sample.title := gsub("\\!Sample_title = ", "", sample.title)]
+    return(dt)
+}
