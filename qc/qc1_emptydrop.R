@@ -1,37 +1,52 @@
 ## BiocManager::install("DropletUtils")
 ## load
 library(DropletUtils)
-
-prepare.10x.files <- function(this.meta, study) {
-    ## create sample subdirectory and extract sample files
-    this.sample.dir <- this.meta[, unique(sample.dir)]
-    this.archives <- file.path(study$dir, this.meta$Name)
-    this.extracts <- file.path(this.sample.dir,
-        gsub(".*(barcodes.tsv|genes.tsv|matrix.mtx).gz", "\\1", this.meta$Name))
-
-    dir.create(this.sample.dir, showWarnings=FALSE)
-    cmd <- sprintf("gunzip -c %s > %s", this.archives, this.extracts)
-    for (this.cmd in cmd) system(this.cmd)
-
-    this.meta[, extracts := this.extracts]
-    return(this.meta)
-}
+library(HDF5Array)
 
 if (FALSE) this.sample <- "GSM4041150" ## for profiling we use only 1 sample
+if (FALSE) this.sample <- "GSM5764242" ## for profiling we use only 1 sample
 
 Cell <- NULL
 for (this.sample in meta[, unique(sample)]) {
     cat("Analyzing sample", this.sample, "\n")
     this.meta <- meta[sample==eval(this.sample)]
+    this.sample.dir <- this.meta[, unique(sample.dir)]
+    this.archives <- file.path(study$dir, this.meta$Name)
 
-    ## create 1 subdirectory per sample and relevant symlinks
-    this.meta <- prepare.10x.files(this.meta, study)
+    if (study$name=="Ramachandran") {
+        ## create sample subdirectory and extract sample files
+        this.extracts <- file.path(this.sample.dir,
+            gsub(".*(barcodes.tsv|genes.tsv|matrix.mtx).gz", "\\1",
+                 this.meta$Name))
 
-    sample.barcodes.file <- this.meta[grep("barcodes", extracts), extracts]
-    sample.barcodes <- fread(sample.barcodes.file, header=FALSE)
+        dir.create(this.sample.dir, showWarnings=FALSE)
+        cmd <- sprintf("gunzip -c %s > %s", this.archives, this.extracts)
+        for (this.cmd in cmd) system(this.cmd)
 
-    ## read 10x experiment from sample dir
-    sce <- read10xCounts(this.meta[, unique(sample.dir)])
+        this.meta[, extracts := this.extracts]
+
+        ## read barcodes
+        sample.barcodes.file <- this.meta[grep("barcodes", extracts), extracts]
+        sample.barcodes <- fread(sample.barcodes.file, header=FALSE)
+
+        ## read 10x experiment from sample dir
+        sce <- read10xCounts(this.meta[, unique(sample.dir)])
+    }
+
+    if (study$name=="Guilliams") {
+        this.extracts <- file.path(this.sample.dir, this.meta$Name)
+        dir.create(this.sample.dir, showWarnings=FALSE)
+        file.symlink(this.archives, this.extracts)
+        this.meta[, extracts := this.extracts]
+
+        ## read barcodes
+        barcode.path <- "matrix/barcodes"
+        sample.barcodes <- h5read(this.extracts, barcode.path)
+        sample.barcodes <- data.table(V1=sample.barcodes)
+
+        ## read 10x experiment from sample dir
+        sce <- read10xCounts(this.extracts)
+    }
 
     ## run emptyDrops
     ## see https://support.bioconductor.org/p/123554/#123562 in case the matrix
@@ -45,7 +60,7 @@ for (this.sample in meta[, unique(sample)]) {
     cat("Starting emptyDrops\n")
     e.out <- tryCatch(emptyDrops(my.count), error = function(e) {
         warning("The matrix must have been pre-filtered already.")
-        return(NA)  # Return NA on error
+        return(NA)  ## Return NA on error
     })
 
     if (is.na(e.out)) True_Cell <- colnames(my.count)
