@@ -1,8 +1,3 @@
-## BiocManager::install("DropletUtils")
-## load
-library(DropletUtils)
-library(HDF5Array)
-
 if (FALSE) this.sample <- "GSM4041150" ## for profiling we use only 1 sample
 if (FALSE) this.sample <- "GSM5764336" ## for profiling we use only 1 sample
 
