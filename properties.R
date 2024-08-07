@@ -1,4 +1,9 @@
 library(data.table)
+library(Seurat)
+library(xlsx)
+library(stringr)
+library(DropletUtils)
+library(HDF5Array)
 
 ## install packages for QC
 ## these packages are only installable with gmm/apps/R/4.0.2.gcc.9.4.0
