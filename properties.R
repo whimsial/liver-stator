@@ -4,6 +4,9 @@ library(xlsx)
 library(stringr)
 library(DropletUtils)
 library(HDF5Array)
+library(biomaRt)
+library(ggplot2)
+library(cowplot)
 
 ## install packages for QC
 ## these packages are only installable with gmm/apps/R/4.0.2.gcc.9.4.0
@@ -29,3 +32,6 @@ codebase.dir <- "~/repos/liver-stator"
 ## downloads
 studies.list.file <- file.path(codebase.dir, "liver_studies.tsv")
 studies.dt <- fread(studies.list.file)
+
+## dublet threshold (inferred from distribution plots in QC step 2)
+dublet.threshold <- 0.15
