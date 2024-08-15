@@ -82,8 +82,39 @@ count.mt.genes <- function(seurat.obj) {
     return(seurat.obj)
 }
 
-## for each sample read 10X experiment, create Seurat object, append dublet
-## info, and create descriptive plots
+#' Create a Seurat object from SingleCellExperiment data
+#'
+#' This function reads single-cell data from either .mtx or .h5 files located
+#' in a specified directory, creates a Seurat object, and enriches it with
+#' metadata including doublet predictions, mitochondrial RNA content, and
+#' additional QC plots.
+#'
+#' @param this.sample A character string specifying the default sample name.
+#'                    Default is "GSM4041150".
+#' @param this.meta A data.table object containing metadata. This should
+#'                  have exactly one row and must include 'sample',
+#'                  'sample.dir', and 'Name' columns.
+#'
+#' @return A Seurat object with additional metadata fields and QC metrics.
+#'
+#' @details The function handles two specific data formats described in:
+#'          Ramachandran et al., which involves .mtx files, and
+#'          Guilliams et al., which involves .h5 files.
+#'          Depending on the files present in the directory, appropriate reading
+#'          functions are called. The function assumes the presence of
+#'          'barcodes.tsv' for naming conventions in cases of .mtx files and
+#'          additionally handles doublet detection and mitochondrial content as
+#'          part of quality control.
+#'
+#' @examples
+#' # Assuming 'metadata' is a data.table with appropriate structure
+#' seurat_obj <- create.seurat(this.sample = "Sample123", this.meta = metadata)
+#'
+#' @importFrom Seurat CreateSeuratObject
+#' @importFrom data.table fread, setDT
+#' @importFrom ggplot2 ggplot, geom_violin, geom_jitter, geom_point, labs, theme_minimal
+#' @importFrom cowplot plot_grid
+#' @importFrom ggplot2 ggsave
 create.seurat <- function(this.sample="GSM4041150", this.meta) {
     if (this.meta[, .N] != 1) {
         stop("Metadata should be a data.table with 1 row")
