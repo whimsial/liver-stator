@@ -8,8 +8,10 @@ this.study <- 1 ## Ramachandran et al (2019)
 study <- download.study(this.study, studies.dt, root.dir)
 
 ## extract archive
-cmd <- sprintf("tar -xvf %s -C %s", study$study.file, study$dir)
-system(cmd)
+if (!dir.exists(study$dir)) {
+    cmd <- sprintf("tar -xvf %s -C %s", study$study.file, study$dir)
+    system(cmd)
+}
 
 ## study variable should be a list with at least 2 elements:
 ## $dir -> name of the directory containing extract from the GEO archive
@@ -24,15 +26,23 @@ meta[, sample := gsub("(GSM\\d+).*", "\\1", Name)]
 meta[, sample.dir := file.path(study$dir, sample)]
 meta <- meta[!grep(".tar", sample)]
 meta <- meta[!grep("blood|mouse", Name)]
-fwrite(meta, file=file.path(study$dir, "metadata.txt"))
+meta[, meta.file := file.path(study$dir, "metadata.txt")]
+fwrite(meta, file=meta$meta.file)
 
 ## extract sample files and perform QC step 1: detection of empty drops
 source("qc/qc1_emptydrop.R")
 
 ## run QC_2RMdoublet.ipynb in Jupyter notebook: detection of duplets
 
-## perform QC step 3
+## run QC step 3
+meta[, surat.file := file.path(study$dir, "merged.seurat.Rdata.gz")]
+source("qc/QC_3Pre_merge_D1.R")
+seurat.study1 <- Merge
 
+## Having inspected the plots we set the following QC thresholds:
+## filter cells with unique feature counts over 2,500 or less than 200
+## filter cells that have >5% mitochondrial counts
+meta.study1 <- meta
 
 ## Process Guilliams et al (2022)
 ## -----------------------------------------------------------------------------
@@ -72,6 +82,7 @@ meta <- meta[!grep(".tar", sample)]
 meta <- meta[Type=="H5"]
 ## keep only files for relevant samples
 meta <- meta[sample %in% selected.samples]
+meta.study2 <- meta
 fwrite(meta, file=file.path(study$dir, "metadata.txt"))
 
 ## extract sample files and perform QC step 1

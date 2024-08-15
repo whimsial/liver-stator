@@ -1,6 +1,6 @@
 library(data.table)
-library(Seurat)
-library(xlsx)
+library(Seurat) ## install version 4.4.0 and seurat-object 4.1.4
+# library(xlsx)
 library(stringr)
 library(DropletUtils)
 library(HDF5Array)
@@ -16,8 +16,10 @@ if (FALSE) {
     install.packages(c("ggExtra", "dplyr", "ggplot2", "xlsx", "stringr",
                        "rjson", "randomcoloR"), lib=my.lib, quiet=TRUE)
     BiocManager::install("rhdf5", lib=my.lib, ask=FALSE)
-    BiocManager::install(c("DropletUtils", "Seurat", "S4Vectors"),
+    BiocManager::install(c("DropletUtils", "S4Vectors"),
                          lib=my.lib, ask=FALSE)
+    devtools::install_github("satijalab/seurat@v4.4.0")
+    devtools::install_github("satijalab/seurat-object@v4.1.4")
     ## loomR has to be installed from GitHub
     devtools::install_github(repo="hhoeflin/hdf5r")
     devtools::install_github(repo="mojaveazure/loomR", ref="develop")

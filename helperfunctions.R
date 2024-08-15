@@ -1,3 +1,9 @@
+#' Helper function to load a given Rdata object.
+load.rdata <- function(filename) {
+    load(filename)
+    get(ls()[ls() != "filename"])
+}
+
 ## download specified study
 download.study <- function(this.study, studies.dt, root.dir) {
     this.study.name <- studies.dt[eval(this.study),
@@ -78,9 +84,51 @@ count.mt.genes <- function(seurat.obj) {
 
 ## for each sample read 10X experiment, create Seurat object, append dublet
 ## info, and create descriptive plots
-create.seurat <- function(this.sample="GSM4041150", meta) {
-    this.meta <- meta[sample==eval(this.sample)]
+create.seurat <- function(this.sample="GSM4041150", this.meta) {
+    if (this.meta[, .N] != 1) {
+        stop("Metadata should be a data.table with 1 row")
+    }
+
+    if (this.meta$sample != this.sample) {
+        stop("Sample name is not matched to metadata. Check input.")
+    }
+
     this.sample.dir <- this.meta[, unique(sample.dir)]
+    if (!dir.exists(this.sample.dir)) {
+        stop("Sample directory listed in metadata does not exist. Check input.")
+    }
+
+    ## Ramachandran et al have data for SingleCellExperiment consisting of
+    ## matrix.mtx, genes.tsv and barcodes.tsv.
+    ## It should be read using read10xCounts and then the sparse matrix of
+    ## counts should be extracted and passed to Seurat
+    ## Guilliams et al report data in h5 format. These files should be read with
+    ## Read10X_h5 function. Thus, we handle both cases here conditional on file
+    ## types.
+    if (any(grepl("mtx", list.files(this.sample.dir)))) {
+        pre <- read10xCounts(this.sample.dir, col.names=TRUE)
+        pre <- counts(pre)
+    } else if (any(grepl("h5", list.files(this.sample.dir)))) {
+        this.h5.file <- this.meta[, Name]
+        pre <- Read10X_h5(file.path(this.sample.dir, this.h5.file),
+                          use.names=TRUE, unique.features=TRUE)
+    } else {
+        stop("Either .mtx or .h5 file should be present. Check input directory.")
+    }
+
+    pre <- CreateSeuratObject(counts=pre, project=this.sample)
+
+    ## create SC index as <sample_id>:<barcode>
+    barcodes.file <- file.path(this.sample.dir, "barcodes.tsv")
+    if (file.exists(barcodes.file)) {
+        barcodes <- fread(barcodes.file, header=FALSE)$V1
+        barcodes <- paste0(this.sample, ":", barcodes)
+    } else {
+        barcodes <- paste0(this.sample, ":", colnames(pre))
+    }
+    pre$barcodes <- barcodes
+    pre$sample <- this.sample
+    pre$orig.ident <- this.sample
 
     ## read Dublet predictions and scores
     prediction.file <- file.path(this.sample.dir,
@@ -89,34 +137,6 @@ create.seurat <- function(this.sample="GSM4041150", meta) {
                              "scrublet_EDR0.008_DoubletScores.csv")
     doublet_prediction <- fread(prediction.file)
     doublet_score <- fread(dublet.file)
-
-    ## Ramachandran et al have data for SingleCellExperiment consisting of
-    ## matrix.mtx, genes.tsv and barcodes.tsv.
-    ## It should be read using read10xCounts and then the sparse matrix of
-    ## counts should be extracted and passed to Seurat
-    if (study$name=="Ramachandran") {
-        pre <- read10xCounts(this.sample.dir)
-        pre <- counts(pre)
-    }
-
-    ## Guilliams et al report data in h5 format. These files should be read with
-    ## Read10X_h5 function.
-    if (study$name=="Guilliams") {
-        this.h5.file <- this.meta[, Name]
-        pre <- Read10X_h5(file.path(this.sample.dir, this.h5.file),
-                          use.names=TRUE, unique.features=TRUE)
-    }
-    pre <- Seurat::CreateSeuratObject(counts=pre, project=this.sample)
-
-    ## create SC index as <sample_id>:<cell_id>
-    pre$barcodes <- rownames(pre@meta.data)
-    pre$sample <- this.sample
-    scvelo_index <- paste0(pre$sample, ":", pre$barcodes)
-    scvelo_index <- gsub(pattern='-1', replacement="x", scvelo_index)
-
-    ## different samples may have the same barcode,
-    ## so add the name of the sample to the barcode
-    pre <- RenameCells(object=pre, new.names=scvelo_index)
 
     ## a given cell is a duplet if doublet_score > threshold.
     ## original threshold was 0.35, but we set a more stringent threshold
@@ -164,8 +184,8 @@ create.seurat <- function(this.sample="GSM4041150", meta) {
     feature.plot <- file.path(this.sample.dir, "feature.plot.png")
     ggsave(file=feature.plot, p)
 
-    ## plot scatter plots of nCount_RNA against percent.mt and nCount_RNA against
-    ## nFeature_RNA
+    ## plot scatter plots of nCount_RNA against percent.mt and nCount_RNA
+    ## against nFeature_RNA
     p1 <- ggplot(dt, aes(x=nCount_RNA, y=percent.mt)) +
         geom_point(size=0.2, alpha=0.2) +
         labs(x="nCount_RNA", y="percent.mt") +
