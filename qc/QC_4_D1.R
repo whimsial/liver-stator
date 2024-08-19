@@ -1,101 +1,143 @@
-rm(list=ls())
-library(Seurat)
-library(S4Vectors)
-library(ggExtra)
-library(dplyr) 
-library(ggplot2)
-setwd("/Volumes/khamseh-lab/ava/ME_scRNA/qc_analysis/Q3_merge/")
-load("/Volumes/khamseh-lab/ava/ME_scRNA/qc_analysis/Q3_merge/Merge_pre_D1.Rdata")
+#' Filter Cells in a Seurat Object
+#'
+#' This function performs multiple quality control (QC) checks to filter cells
+#' in a Seurat object based on gene expression, mitochondrial content, and
+#' other metadata-based criteria. It also generates a diagnostic plot to
+#' visually assess the quality of the data after filtering.
+#'
+#' @param seurat.object `Seurat` object with single-cell RNA sequence data.
+#' @param min.features Integer specifying minimum number of features (genes)
+#'        per cell. Default is 500.
+#' @param min.counts Integer specifying minimum number of transcripts (total
+#'        RNA counts) per cell. Default is 1000.
+#' @param max.mt Numeric specifying maximum percentage of mitochondrial genes
+#'        allowed per cell. Cells with a higher percentage will be removed.
+#'        Default is 10.
+#' @param n.deviation Integer number of median absolute deviations (MAD)
+#'        from the median expression values used to identify and filter
+#'        outliers. Default is 3.
+#' @param n.cells Integer specifying minimum number of cells in which a gene
+#'        must be detected to be retained. This helps filter out
+#'        rarely expressed genes. Default is 30.
+#' @param output.dir Full path to the directory where the diagnostic plot
+#'        will be saved. Default is the current working directory (`getwd()`).
+#'
+#' @return A filtered `Seurat` object with cells and genes that pass filtering.
+#'
+#' @examples
+#' # Filter with default parameters
+#' filtered.seurat <- filter.seurat(my.seurat.object)
+#'
+#' # Filter with custom parameters
+#' filtered.seurat <- filter.seurat(my.seurat.object,
+#'                                  min.features=300,
+#'                                  output.dir="/path/to/output")
+#'
+#' @importFrom Seurat subset
+#' @import ggplot2
+#' @importFrom data.table as.data.table, setDT
+#' @importFrom stats median, mad
+filter.seurat <- function(seurat.object,
+                          min.features=500, min.counts=1000, max.mt=10,
+                          n.deviation=3, n.cells=30, output.dir=getwd()) {
+    require(Seurat)
+    require(data.table)
+    require(ggplot2)
 
+    ## Remove cells with transcripts/cell counts greater than 3 median absolute
+    ## deviation (MAD) away from the median
+    all.samples <- meta[, unique(sample)]
 
+    cells.to.remove <- NULL
+    for (this.sample in all.samples) {
+        meta.data <- setDT(seurat.object@meta.data)[sample==eval(this.sample)]
 
-##QC step:
-# Discard cells: in each sample
-# (1) with fewer than 1,000 transcripts
-# (2) with counts (transcripts/ cell) greater than 3 median absolute deviation (MAD) 
-#     away from the median (removing potential doublets and debris) 
-# (3) with genes (genes/cell) greater than 3 MAD away from the median 
-#     (to remove low-abundance genes or genes with high dropout rate)
-# (4) mt % > 10%
-# (5) with genes fewer than 500
-# (6) doublet
+        count.threshold <- median(meta.data$nCount_RNA) +
+                           n.deviation * mad(meta.data$nCount_RNA)
+        feature.threshold <- median(meta.data$nFeature_RNA) +
+                             n.deviation * mad(meta.data$nFeature_RNA)
+        meta.data[, qc.fail := 0]
+        meta.data[nCount_RNA > count.threshold | nFeature_RNA > feature.threshold,
+                  qc.fail := 1]
+        to.remove <- meta.data[qc.fail==1, barcodes]
+        cat(length(to.remove),
+            "cells will be removed from sample", this.sample,
+            "due to feature/RNA count threshold.\n")
+        cells.to.remove <- c(cells.to.remove, to.remove)
+    }
 
-Remove_Cells<-NULL
-for (i in unique(Merge$sample)){
-  meta_data<-Merge@meta.data
-  meta_data<-meta_data[meta_data$sample==i,]
-  
-  genes_cut<-median(meta_data$nFeature_RNA)+3*mad(meta_data$nFeature_RNA)
-  counts_cut<-median(meta_data$nCount_RNA)+3*mad(meta_data$nCount_RNA)
-  print(paste0(i," Genes_cut: ",genes_cut))
-  print(paste0(i," counts_cut: ",counts_cut))
-  
-  Cells<-rownames(meta_data)[meta_data$nCount_RNA>counts_cut | meta_data$nFeature_RNA>genes_cut]
-  Remove_Cells<-c(Cells,Remove_Cells)
-  
+    if (!all(cells.to.remove %in% colnames(seurat.object)))
+        stop("Cells barcodes were not matched to Seurat colnames.
+              Check barcode names.")
+
+    cells.to.keep <- colnames(seurat.object)[!colnames(seurat.object)
+                                             %in% cells.to.remove]
+
+    df <- seurat.object@meta.data
+    df <- df[barcodes %in% cells.to.keep]
+
+    cat(nrow(df), "of", ncol(seurat.object),
+        "cells remain after filtering by MAD\n")
+
+    ## Remove cells with N features < min.features
+    df <- df[nFeature_RNA>min.features]
+    cat(nrow(df), "of", ncol(seurat.object),
+        "cells remain after filtering by nFeature_RNA\n")
+
+    ## Remove cells with N transcripts < min.counts (RNA counts)
+    df <- df[nCount_RNA>min.counts]
+    cat(nrow(df), "of", ncol(seurat.object),
+        "cells remain after filtering by nCount_RNA\n")
+
+    ## Remove cells with % MT genes > max.mt%
+    df <- df[percent.mt<max.mt]
+    cat(nrow(df), "of", ncol(seurat.object),
+        "cells remain after filtering by percent.mt\n")
+
+    ## Remove cells with doublet prediction > 0
+    df <- df[doublet_prediction==0]
+    cat(nrow(df), "of", ncol(seurat.object),
+        "cells remain after removing doublets\n")
+
+    ## perform subset and update metadata manually (this is a workaround for the
+    ## issue where subset function from Seurat package would not run properly)
+    cells.to.keep <- df$barcode
+    seurat.object.filtered <- seurat.object[, cells.to.keep]
+    seurat.object.filtered@meta.data <- df[barcodes %in% cells.to.keep]
+
+    ## run some checks to ensure consistency between meta data and Seurat object
+    if (any(is.na(seurat.object.filtered@meta.data)))
+        stop("NAs detected in meta.data.")
+    if (!identical(colnames(seurat.object.filtered),
+        seurat.object.filtered@meta.data$barcode))
+        stop("Cell names in counts matrix do not match meta.data.")
+    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
+        stop("Cells labeled for removal detected in the filtered Seurat object.")
+
+    ## plot the counts after filtering
+    dt <- setDT(seurat.object.filtered@meta.data)
+    p <- ggplot(dt, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
+        geom_point() +
+        scale_colour_gradient(low="gray90", high="black") +
+        stat_smooth(method=lm) +
+        scale_x_log10() +
+        scale_y_log10() +
+        labs(x="RNA counts, Log10", y="N transcripts, Log10")
+    plot.file <- file.path(output.dir, "feature.plot.png")
+    ggsave(file=plot.file, p)
+
+    ## keep only genes which are expressed in n.cells or more cells
+    gene.detection.rate <- PercentageFeatureSet(seurat.object.filtered,
+                                                pattern="^", assay="RNA")
+    counts <- GetAssayData(object=seurat.object.filtered, slot="counts")
+    nonzero.counts <- counts > 0
+    keep.genes <- Matrix::rowSums(nonzero.counts) >= n.cells
+    cat(sum(keep.genes), "of", nrow(seurat.object.filtered),
+        "genes are expressed in more than", n.cells,
+        "cells and will be retained.\n")
+    seurat.object.filtered <- seurat.object.filtered[keep.genes, ]
+    seurat.object.filtered@meta.data <- setDF(dt)
+    save(seurat.object.filtered,
+         file=file.path(output.dir, "merged.filtered.seurat.Rdata.gz"))
+    return(seurat.object.filtered)
 }
-  
-length(Remove_Cells)  
-Merge<-Merge[,!colnames(Merge)%in%Remove_Cells]
-filtered_data <- subset(x = Merge, subset= nFeature_RNA > 500  & percent.mt < 10 & nCount_RNA > 1000 & doublet_prediction==0)
-
-
-meta_data<-filtered_data@meta.data
-p<-meta_data %>% 
-  ggplot(aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) + 
-  geom_point() + 
-  scale_colour_gradient(low = "gray90", high = "black") +
-  stat_smooth(method=lm) +
-  scale_x_log10() + 
-  scale_y_log10() + 
-  theme_classic() 
-  
-p
-p<-ggMarginal(p, 
-           xparams = list(fill = 4),
-           yparams = list(fill = 3))
-p
-p;ggsave("/Volumes/khamseh-lab/ava/ME_scRNA/qc_analysis/Q4_gene_cell_mito/nFeature_RNA_nCount_RNA.pdf",width = 9,height = 5)
-
-filtered_data[["percent.ribo"]] <- PercentageFeatureSet(filtered_data, pattern = "^Rps|^Rpl")
-
-##Gene-level filtering
-##keep only genes which are expressed in 30 or more cells.
-#counts <- GetAssayData(object = filtered_data, slot = "counts")
-#counts[1:10,1:10]
-##hist(as.matrix(counts))
-
-#####################################
-#### Suerat version 5 of above ######
-############# testing ###############
-filtered_data <- JoinLayers(filtered_data)
-#counts <- GetAssayData(object = filtered_data, slot = "counts")
-#counts[1:10,1:10]
-
-#counts <- GetAssayData(object = filtered_data, slot = "counts")
-counts <- LayerData(filtered_data, assay = "RNA", layer = "counts")
-
-
-
-
-
-
-nonzero <- counts > 0
-keep_genes <- Matrix::rowSums(nonzero) >= 30
-filtered_counts <- counts[keep_genes, ]
-
-dim(filtered_data)
-filtered_data<-filtered_data[keep_genes,]
-
-# #Remove ribosomal and mitochondrial genes from the analysis
-# remove <- rownames(filtered_data)[grep("^Rps|^Rpl|^Mrps|^Mrpl|^mt-", rownames(filtered_data))]
-# filtered_data<-filtered_data[!rownames(filtered_data)%in%remove,]
-# 
-# dim(filtered_data)
-# 
-# 
-# filtered_data
-
-
-save(filtered_data,file="/Volumes/khamseh-lab/ava/ME_scRNA/qc_analysis/QCed_data_D1.Rdata")
-
