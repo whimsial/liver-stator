@@ -26,8 +26,8 @@ meta[, sample := gsub("(GSM\\d+).*", "\\1", Name)]
 meta[, sample.dir := file.path(study$dir, sample)]
 meta <- meta[!grep(".tar", sample)]
 meta <- meta[!grep("blood|mouse", Name)]
-meta[, meta.file := file.path(study$dir, "metadata.txt")]
-fwrite(meta, file=meta$meta.file)
+meta.file <- file.path(study$dir, "metadata.txt")
+fwrite(meta, file=meta.file)
 
 ## extract sample files and perform QC step 1: detection of empty drops
 source("qc/qc1_emptydrop.R")
@@ -35,13 +35,13 @@ source("qc/qc1_emptydrop.R")
 ## run QC_2RMdoublet.ipynb in Jupyter notebook: detection of duplets
 
 ## run QC step 3
-meta[, surat.file := file.path(study$dir, "merged.seurat.Rdata.gz")]
 seurat.study1 <- process.samples.and.merge(meta)
+save(seurat.study1, file=file.path)
 
-## Having inspected the plots we set the following QC thresholds:
+## run QC step 4 to filter out genes/cells that do not pass the thresholds
 ## filter cells with unique feature counts over 2,500 or less than 200
 ## filter cells that have >5% mitochondrial counts
-meta.study1 <- meta
+seurat.study1.filtered <- filter.seurat(seurat.study1)
 
 ## Process Guilliams et al (2022)
 ## -----------------------------------------------------------------------------

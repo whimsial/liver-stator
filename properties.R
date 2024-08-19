@@ -10,6 +10,7 @@ library(ggExtra)
 library(cowplot)
 
 source("qc/QC_3Pre_merge_D1.R")
+source("qc/QC_4_D1.R")
 
 ## install packages for QC
 ## these packages are only installable with gmm/apps/R/4.0.2.gcc.9.4.0
