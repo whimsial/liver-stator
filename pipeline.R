@@ -36,8 +36,7 @@ source("qc/qc1_emptydrop.R")
 
 ## run QC step 3
 meta[, surat.file := file.path(study$dir, "merged.seurat.Rdata.gz")]
-source("qc/QC_3Pre_merge_D1.R")
-seurat.study1 <- Merge
+seurat.study1 <- process.samples.and.merge(meta)
 
 ## Having inspected the plots we set the following QC thresholds:
 ## filter cells with unique feature counts over 2,500 or less than 200

@@ -230,3 +230,7 @@ create.seurat <- function(this.sample="GSM4041150", this.meta) {
     ggsave(file=scatter.plot, p)
     return(pre)
 }
+
+filter.seurat <- function(seurat.object) {
+
+}
