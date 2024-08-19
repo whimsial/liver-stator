@@ -24,3 +24,10 @@ metadata including doublet predictions, mitochondrial RNA content, and
 additional QC plots.
 
 We then proceed by merging the Seurat objects for all samples within each study to generate a study-wide Seurat object.
+
+### Step 4: filter out cells/genes not passing QC filteres
+
+Perform multiple quality control (QC) checks to filter cells
+in a Seurat object based on gene expression, mitochondrial content, and
+other metadata-based criteria. It also generates a diagnostic plot to
+visually assess the quality of the data after filtering.
