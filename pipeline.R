@@ -36,12 +36,23 @@ source("qc/qc1_emptydrop.R")
 
 ## run QC step 3
 seurat.study1 <- process.samples.and.merge(meta)
-save(seurat.study1, file=file.path)
 
 ## run QC step 4 to filter out genes/cells that do not pass the thresholds
-## filter cells with unique feature counts over 2,500 or less than 200
-## filter cells that have >5% mitochondrial counts
-seurat.study1.filtered <- filter.seurat(seurat.study1)
+seurat.study1.filtered <- filter.seurat(seurat.study1, output.dir=study$dir)
+
+## load core genes for NAFLD
+core.eqtls <- load.rdata(file.path(root.dir, "nafld.diag.core.genes.eqtls.RData"))
+core.pqtls <- load.rdata(file.path(root.dir, "nafld.diag.core.genes.pqtls.RData"))
+
+core.genes <- c(core.eqtls[pvalue_trans<1E-6, gene_symbol],
+                core.pqtls[pvalue_trans<1E-6 & eff.numtransqtls>=5, gene_symbol])
+
+## run QC step 5 to select most variable genes and prepare inputs for Stator
+label.genes <- c("ADIPOQ", "ADIPOR1", "ADIPOR2")
+seurat.study1.filtered.hvg <- process.variable.genes(seurat.study1.filtered,
+                                                     core.genes=core.genes,
+                                                     label.genes=label.genes,
+                                                     output.dir=study$dir)
 
 ## Process Guilliams et al (2022)
 ## -----------------------------------------------------------------------------

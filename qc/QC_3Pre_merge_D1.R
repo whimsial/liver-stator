@@ -3,7 +3,7 @@ count.mt.genes <- function(seurat.obj) {
     require(Seurat)
     ## if MT- cannot be matched in gene names, then try excluding MT genes which
     ## are matched by Ensembl id
-    if (sum(PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-"))!=0) {
+    if (sum(PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")) != 0) {
         seurat.obj[["percent.mt"]] <- PercentageFeatureSet(seurat.obj,
                                                            pattern="^MT-|^mt-")
     } else {

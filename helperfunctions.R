@@ -31,7 +31,7 @@ download.study <- function(this.study, studies.dt, root.dir) {
     return(study.properties)
 }
 
-## Get and parse GEO soft meta data into R data.table
+## get and parse GEO soft meta data into R data.table
 parse.soft <- function(soft.url, soft.file) {
     ## download soft file
     cmd <- sprintf("curl %s --output %s --retry 100 --retry-delay 2 -s",

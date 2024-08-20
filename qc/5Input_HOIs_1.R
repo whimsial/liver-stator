@@ -8,7 +8,7 @@ library(ggplot2)
 library(loomR)
 library(xlsx)
 library(rjson)
-library(xlsx) 
+library(xlsx)
 require(stringr)
 
 ############################
@@ -18,7 +18,7 @@ require(stringr)
 load("./run_subset1/QCed_input_D1_subset1.Rdata")
 QCed_input_D1_subset1
 
-##Color 
+##Color
 table(QCed_input_D1_subset1$sample)
 
 QCed_input_D1_subset1 <- NormalizeData(QCed_input_D1_subset1, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -75,7 +75,7 @@ result_sub$clusterFile<-paste0("/exports/igmm/eddie/khamseh-lab/ava/ME_scRNA/ana
 jsonData <- toJSON(result_sub)
 write(jsonData, paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/jsonData.json"),ncolumns = 1)
 write.csv(cluster,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/clusters.csv"),append = F,quote = F,row.names = F,col.names = T)
-write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T) 
+write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T)
 
 ## Get the full count matrix ##
 
@@ -84,7 +84,7 @@ srt <- QCed_input_D1_subset1
 count<- LayerData(srt, assay = "RNA", layer = "counts")
 count<-as.matrix(count)
 count<-t(count)
-write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/shiny_app_count_martix_all_run_subset1.csv"),append = F,quote = F,row.names = T,col.names = T) 
+write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/shiny_app_count_martix_all_run_subset1.csv"),append = F,quote = F,row.names = T,col.names = T)
 
 
 
@@ -95,7 +95,7 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n
 load("./run_subset2/QCed_input_D1_subset2.Rdata")
 QCed_input_D1_subset2
 
-##Color 
+##Color
 table(QCed_input_D1_subset2$sample)
 
 QCed_input_D1_subset2 <- NormalizeData(QCed_input_D1_subset2, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -152,7 +152,7 @@ result_sub$clusterFile<-paste0("/exports/igmm/eddie/khamseh-lab/ava/ME_scRNA/ana
 jsonData <- toJSON(result_sub)
 write(jsonData, paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/jsonData.json"),ncolumns = 1)
 write.csv(cluster,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/clusters.csv"),append = F,quote = F,row.names = F,col.names = T)
-write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T) 
+write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T)
 
 ## Get the full count matrix ##
 
@@ -161,7 +161,7 @@ srt <- QCed_input_D1_subset2
 count<- LayerData(srt, assay = "RNA", layer = "counts")
 count<-as.matrix(count)
 count<-t(count)
-write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/shiny_app_count_martix_all_run_subset2.csv"),append = F,quote = F,row.names = T,col.names = T) 
+write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/shiny_app_count_martix_all_run_subset2.csv"),append = F,quote = F,row.names = T,col.names = T)
 
 
 
@@ -175,7 +175,7 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n
 load("QCed_input_D1_Run1.Rdata")
 QCed_input_D1_Run1
 
-##Color 
+##Color
 table(QCed_input_D1_Run1$sample)
 
 QCed_input_D1_Run1 <- NormalizeData(QCed_input_D1_Run1, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -232,7 +232,7 @@ result_sub$clusterFile<-paste0("/exports/igmm/eddie/khamseh-lab/ava/ME_scRNA/ana
 jsonData <- toJSON(result_sub)
 write(jsonData, paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/jsonData.json"),ncolumns = 1)
 write.csv(cluster,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/clusters.csv"),append = F,quote = F,row.names = F,col.names = T)
-write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T) 
+write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T)
 
 ## Get the full count matrix ##
 
@@ -241,7 +241,7 @@ srt <- QCed_input_D1_Run1
 count<- LayerData(srt, assay = "RNA", layer = "counts")
 count<-as.matrix(count)
 count<-t(count)
-write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run1/shiny_app_count_martix_all_run1.csv"),append = F,quote = F,row.names = T,col.names = T) 
+write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run1/shiny_app_count_martix_all_run1.csv"),append = F,quote = F,row.names = T,col.names = T)
 
 
 
@@ -251,17 +251,17 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run
 # ############################
 # ########## Yuelin ##########
 # ############################
-# 
-# 
+#
+#
 # #### analysed data: /Users/yaoyuelin/Desktop/GoF_DNMT3A/Mouse_WT_and_GOF_DNMT3A_Progenitors/Analysis_03/04_WT_and_Mutant_Merged_All_Lineages/05_Chosen_Parameters/Mouse_WT_and_Mutant_All_Lineage_Cell_Cycle_Regresssed_02_dim_20_res_0.5.RDS
 # rm(list = ls())
 # srt<-readRDS("/Users/yaoyuelin/Desktop/GoF_DNMT3A/Mouse_WT_and_GOF_DNMT3A_Progenitors/Analysis_03/04_WT_and_Mutant_Merged_All_Lineages/05_Chosen_Parameters/Non_Cell_Cycle_Regressed/Mouse_WT_and_Mutant_All_Lineage_02_dim_20_res_0.5.RDS")
-# 
+#
 # table(srt$condition)
-# 
+#
 # srt <- NormalizeData(srt, normalization.method = "LogNormalize", scale.factor = 10000)
 # srt <- FindVariableFeatures(srt, selection.method = "vst", nfeatures = 1000)
-# #"Pf4"    "Hbb-bs" "Hba-a1" "Hbb-bt" "Prss34" "Prg2"  
+# #"Pf4"    "Hbb-bs" "Hba-a1" "Hbb-bt" "Prss34" "Prg2"
 # # Identify the 20 most highly variable genes
 # top20 <- head(VariableFeatures(srt), 20)
 # top20
@@ -269,7 +269,7 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run
 # plot1 <- VariableFeaturePlot(srt)
 # plot2 <- LabelPoints(plot = plot1, points = top20, repel = TRUE)
 # plot1 + plot2
-# 
+#
 # colnames(srt@meta.data)
 # srt$condition
 # srt$names<-paste0(srt$names_WT,srt$names_Mutant)
@@ -280,15 +280,15 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run
 # write.csv(meta_data,file="/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/Analysed/meta.csv")
 # write.csv(meta_data,file="/Users/yaoyuelin/Desktop/GoF_DNMT3A/Analysed/Meta.csv")
 # write.csv(srt@reductions[["umap"]]@cell.embeddings,file="/Users/yaoyuelin/Desktop/GoF_DNMT3A/Analysed/umap.csv")
-# 
+#
 # gene<-VariableFeatures(srt)
 # count<-srt@assays[["RNA"]]@counts
 # count<-as.matrix(count)
 # count<-count[gene,]
 # count<-t(count)
-# 
+#
 # dim(count)
-# 
+#
 # sub_matrix<-count
 # result <- fromJSON(file = "/Volumes/khamseh-lab/Yuelin/pancancer/SKSC/jsonData.json")
 # expressed_count<-sort(colSums(sub_matrix),decreasing = T)
@@ -296,7 +296,7 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run
 # genes<-names(expressed_count)
 # genes
 # n="Analysed"
-# 
+#
 # dir.create(paste0("/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/",n))
 # write.table(rbind(genes),file=paste0("/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/",n,"/genes.csv"),append = F,quote = F,row.names = F,col.names = F,sep = ",")
 # sub_matrix<-sub_matrix[,genes]
@@ -314,23 +314,23 @@ write.csv(count,file=paste0("/Volumes/khamseh-lab/ava/ME_scRNA/data_analysis/run
 # jsonData <- toJSON(result_sub)
 # write(jsonData, paste0("/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/",n,"/jsonData.json"),ncolumns = 1)
 # write.csv(cluster,file=paste0("/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/",n,"/clusters.csv"),append = F,quote = F,row.names = F,col.names = T)
-# write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T) 
-# 
+# write.csv(sub_matrix,file=paste0("/Volumes/khamseh-lab/Yuelin/GoF_DNMT3A_Single_Cell_Jordan_Analysis/",n,"/count_matrix.csv"),append = F,quote = F,row.names = T,col.names = T)
+#
 # #####################################################################
-# 
-# 
-# 
+#
+#
+#
 # srt<-get(load("/Users/yaoyuelin/Documents/GoF_DNMT3A/ReAnalysed/filtered_data_normalised.Rdata"))
 # count<-srt@assays[["RNA"]]@counts
 # count<-as.matrix(count)
 # count<-t(count)
-# write.csv(count,file=paste0("/Users/yaoyuelin/Documents/GoF_DNMT3A/Yuelin_GoF_DNMT3A/ReAnalysed/Stator/ShinyApp_Input/count_martix_all.csv"),append = F,quote = F,row.names = T,col.names = T) 
-# 
+# write.csv(count,file=paste0("/Users/yaoyuelin/Documents/GoF_DNMT3A/Yuelin_GoF_DNMT3A/ReAnalysed/Stator/ShinyApp_Input/count_martix_all.csv"),append = F,quote = F,row.names = T,col.names = T)
+#
 # srt<-readRDS("/Users/yaoyuelin/Documents/GoF_DNMT3A/Mouse_WT_and_GOF_DNMT3A_Progenitors/Analysis_03/04_WT_and_Mutant_Merged_All_Lineages/05_Chosen_Parameters/Non_Cell_Cycle_Regressed/Mouse_WT_and_Mutant_All_Lineage_02_dim_20_res_0.5.RDS")
 # count<-srt@assays[["RNA"]]@counts
 # count<-as.matrix(count)
 # count<-t(count)
-# write.csv(count,file=paste0("/Users/yaoyuelin/Documents/GoF_DNMT3A/Yuelin_GoF_DNMT3A/Analysed/Stator/ShinyApp_Input/count_martix_all.csv"),append = F,quote = F,row.names = T,col.names = T) 
-# 
-# 
-# 
+# write.csv(count,file=paste0("/Users/yaoyuelin/Documents/GoF_DNMT3A/Yuelin_GoF_DNMT3A/Analysed/Stator/ShinyApp_Input/count_martix_all.csv"),append = F,quote = F,row.names = T,col.names = T)
+#
+#
+#

@@ -6,6 +6,8 @@
 #' visually assess the quality of the data after filtering.
 #'
 #' @param seurat.object `Seurat` object with single-cell RNA sequence data.
+#' @param output.dir Full path to the directory where the diagnostic plot
+#'        will be saved.
 #' @param min.features Integer specifying minimum number of features (genes)
 #'        per cell. Default is 500.
 #' @param min.counts Integer specifying minimum number of transcripts (total
@@ -19,8 +21,6 @@
 #' @param n.cells Integer specifying minimum number of cells in which a gene
 #'        must be detected to be retained. This helps filter out
 #'        rarely expressed genes. Default is 30.
-#' @param output.dir Full path to the directory where the diagnostic plot
-#'        will be saved. Default is the current working directory (`getwd()`).
 #'
 #' @return A filtered `Seurat` object with cells and genes that pass filtering.
 #'
@@ -37,9 +37,9 @@
 #' @import ggplot2
 #' @importFrom data.table as.data.table, setDT
 #' @importFrom stats median, mad
-filter.seurat <- function(seurat.object,
+filter.seurat <- function(seurat.object, output.dir,
                           min.features=500, min.counts=1000, max.mt=10,
-                          n.deviation=3, n.cells=30, output.dir=getwd()) {
+                          n.deviation=3, n.cells=30) {
     require(Seurat)
     require(data.table)
     require(ggplot2)
