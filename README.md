@@ -31,3 +31,9 @@ Perform multiple quality control (QC) checks to filter cells
 in a Seurat object based on gene expression, mitochondrial content, and
 other metadata-based criteria. It also generates a diagnostic plot to
 visually assess the quality of the data after filtering.
+
+### Step 5: process and visualise variable genes in a Seurat object
+
+Perform a series of operations on a Seurat object to identify
+and visualise highly variable genes. Normalise the data, identify variable
+features, map gene IDs to Ensembl, and plot these genes on mean expression vs variance plot. Also label core genes to check if any fall within the subset of highly variable genes.
