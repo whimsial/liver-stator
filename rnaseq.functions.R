@@ -1,4 +1,153 @@
-## get gene symbols from Ensembl ids
+#' Download GEO study data and file list
+#'
+#' This function downloads a specified study and its associated file list to a
+#' designated directory. It creates a new directory for the study,
+#' downloads the main study file and a file list from provided URLs,
+#' and returns a list of properties about the downloaded study.
+#'
+#' @param study.name Character string specifying the name of the study.
+#'        This name is used to create a subdirectory within `root.dir`.
+#' @param study.url GEO URL from where the study should be downloaded.
+#' @param filelist.url GEO URL containing the URL from where the file list
+#'        should be downloaded.
+#' @param root.dir Full path to the root directory under which a new directory
+#'        will be created for the study.
+#'
+#' @return A list with the following components:
+#'   \itemize{
+#'     \item \code{name}: The name of the study.
+#'     \item \code{dir}: The directory path where the study and file list are stored.
+#'     \item \code{study.file}: The path to the downloaded study file.
+#'     \item \code{study.file.list}: The path to the downloaded file list.
+#'   }
+#'
+#' @examples
+#' \dontrun{
+#'   study.info <- download.study(
+#'      "Ramachandran",
+#'      "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/GSE136103_RAW.tar",
+#'      "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl",
+#'      getwd())
+#'   print(study.info)
+#' }
+#'
+download.study <- function(study.name, study.url, filelist.url, root.dir) {
+    study.dir <- file.path(root.dir, study.name)
+    dir.create(study.dir, showWarnings=FALSE)
+
+    study.file <- file.path(study.dir, basename(study.url))
+    filelist.file <- file.path(study.dir, basename(filelist.url))
+
+    if (!file.exists(study.file)) {
+        cat("Downloading from", study.url, "to", study.file, "...\n")
+        curl.cmd <- "curl %s --output %s --retry 100 --retry-delay 2 -s"
+        system(sprintf(curl.cmd, study.url, study.file))
+        system(sprintf(curl.cmd, filelist.url, filelist.file))
+    }
+
+    ## extract archive
+    if (!dir.exists(study.dir)) {
+        cmd <- sprintf("tar -xvf %s -C %s", study.file, study.dir)
+        system(cmd)
+    }
+
+    study.properties <- list(name=study.name, dir=study.dir,
+                             study.file=study.file,
+                             study.file.list=filelist.file)
+    return(study.properties)
+}
+
+#' Download and parse GEO Soft Metadata into R Data Table
+#'
+#' This function downloads a GEO soft file from a specified URL, decompresses it,
+#' and parses it to extract sample identifiers and titles, organizing them into
+#' a data.table object.
+#'
+#' @param soft.url GEO URL from where the GEO soft file should be downloaded.
+#' @param soft.file Full path with the filename of the file where the
+#'        downloaded and extracted data will be stored. The function
+#'        will append ".gz" to this filename for the compressed download
+#'        and remove it after extraction.
+#'
+#' @return A `data.table` object containing two columns:
+#'   \itemize{
+#'     \item \code{sample}: Extracted sample identifiers.
+#'     \item \code{sample.title}: Corresponding sample titles.
+#'   }
+#'
+#' @details The function performs the following steps:
+#'   * Downloads the .gz compressed soft file from the provided URL.
+#'   * Extracts the .gz file into the specified path.
+#'   * Reads the file lines and extracts lines starting with "^SAMPLE" for sample
+#'     identifiers and lines starting with "!Sample_title" for sample titles.
+#'   * Cleans up the extracted strings to remove preceding keywords and equal
+#'     signs.
+#'
+#' @examples
+#' \dontrun{
+#'   soft.url <- "http://example.com/sample.soft.gz"
+#'   soft.file <- "path/to/sample.soft"
+#'   sample.data <- parse.soft(soft.url, soft.file)
+#'   print(sample.data)
+#' }
+#'
+#' @import data.table
+#' @export
+parse.soft <- function(soft.url, soft.file) {
+    ## download soft file
+    cmd <- sprintf("curl %s --output %s --retry 100 --retry-delay 2 -s",
+                   soft.url, paste0(soft.file, ".gz"))
+    system(cmd)
+
+    ## extract and read into R
+    cmd <- sprintf("gunzip -c %s > %s", paste0(soft.file, ".gz"), soft.file)
+    system(cmd)
+    tmp <- readLines(soft.file)
+
+    ## grep ^SAMPLE and !Sample_title key words
+    dt <- data.table(sample=tmp[grep("\\^SAMPLE", tmp)],
+                     sample.title=tmp[grep("\\!Sample_title", tmp)])
+
+    ## cleanup strings
+    dt[, sample := gsub("\\^SAMPLE = ", "", sample)]
+    dt[, sample.title := gsub("\\!Sample_title = ", "", sample.title)]
+    return(dt)
+}
+
+#' Retrieve gene symbols from Ensembl IDs
+#'
+#' This function takes a set of Ensembl gene IDs and uses the biomaRt package to
+#' retrieve the corresponding gene symbols from the specified Ensembl database.
+#'
+#' @param ensembl.ids Data.table or data.frame containing the Ensembl gene IDs
+#'        in a column named `gene.id`.
+#' @param ensembl BioMart database object representing the Ensembl database;
+#'        typically this is created using the `useMart` function from the
+#'        biomaRt package.
+#'
+#' @return A data.table with two columns:
+#'   \itemize{
+#'     \item \code{ensembl_gene_id}: The Ensembl gene IDs queried.
+#'     \item \code{external_gene_name}: The corresponding gene symbols for the queried IDs.
+#'   }
+#'   The function also prints the number of matched and total queried gene IDs.
+#'
+#' @details The function requires the biomaRt package and expects that the ensembl
+#'          object passed to it has been properly initialized with the useMart
+#'          function. It uses the `getBM` function to perform the query.
+#'
+#' @examples
+#' \dontrun{
+#'   library(data.table)
+#'   library(biomaRt)
+#'   ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+#'   ensembl.ids <- data.table(gene.id = c("ENSG00000139618", "ENSG00000155657"))
+#'   gene.symbols <- get.gene.symbols(ensembl.ids, ensembl)
+#'   print(gene.symbols)
+#' }
+#'
+#' @importFrom biomaRt getBM
+#' @importFrom data.table setDT
 get.gene.symbols <- function(ensembl.ids, ensembl) {
     gene.symbols <- setDT(getBM(attributes=c("ensembl_gene_id",
                                              "external_gene_name"),
@@ -10,7 +159,42 @@ get.gene.symbols <- function(ensembl.ids, ensembl) {
     return(gene.symbols)
 }
 
-## get Ensembl ids from gene symbols
+#' Retrieve Ensembl IDs from gene symbols
+#'
+#' This function queries an Ensembl database to find Ensembl gene IDs corresponding
+#' to a given list of gene symbols using the biomaRt package.
+#'
+#' @param gene.symbols Data.table or data.frame containing the gene symbols
+#'        in a column named `gene.symbol`.
+#' @param ensembl BioMart database object representing the Ensembl database;
+#'        this is typically initialized with the `useMart` function from
+#'        the biomaRt package.
+#'
+#' @return A unique data.table that includes:
+#'   \itemize{
+#'     \item \code{ensembl_gene_id}: The Ensembl gene IDs corresponding to the queried gene symbols.
+#'     \item \code{external_gene_name}: The gene symbols provided in the query.
+#'   }
+#'   Additionally, a message is printed showing the number of gene symbols matched
+#'   and the total number queried.
+#'
+#' @details The function makes use of the `getBM` function from the biomaRt package
+#'          to perform the query. It is important that the `ensembl` object has been
+#'          properly initialized. The results are filtered to provide unique matches
+#'          based on gene symbols.
+#'
+#' @examples
+#' \dontrun{
+#'   library(data.table)
+#'   library(biomaRt)
+#'   ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+#'   gene.symbols <- data.table(gene.symbol = c("BRCA2", "TP53"))
+#'   ensembl.ids <- get.gene.ids(gene.symbols, ensembl)
+#'   print(ensembl.ids)
+#' }
+#'
+#' @importFrom biomaRt getBM
+#' @importFrom data.table setDT
 get.gene.ids <- function(gene.symbols, ensembl) {
     ensembl.ids <- setDT(getBM(attributes=c("ensembl_gene_id",
                                             "external_gene_name"),
@@ -23,7 +207,42 @@ get.gene.ids <- function(gene.symbols, ensembl) {
     return(ensembl.ids)
 }
 
-## plot variable genes
+#' Plot variable genes from Seurat object
+#'
+#' Visualizes variable genes on a scatter plot using data from a Seurat object.
+#' This function highlights specific genes and saves the plot to a file.
+#'
+#' @param seurat.object A Seurat object containing variable gene data and expression
+#'        metrics calculated, typically with functions such as `FindVariableFeatures`.
+#' @param genes.dt Data.table or data.frame containing the gene identifiers
+#'        and symbols to be highlighted; must include columns `gene.id`
+#'        for gene identifiers and `gene.symbol` for gene names.
+#' @param output.file Full path to the file where the plot should be saved.
+#'        Supports any file format compatible with `ggsave`,
+#'        including but not limited to png, pdf, and jpeg formats.
+#'
+#' @details The function first creates a basic variable feature plot using the
+#'          `VariableFeaturePlot` function. It then overlays labels using
+#'          `LabelPoints` from the Seurat package, which repels labels to avoid
+#'          overlap and adjusts aesthetics. The plot is then logged on the y-axis,
+#'          labeled, and styled with a minimal theme. Finally, it is saved to the
+#'          specified output file using `ggsave`.
+#'
+#' @return Invisible. The function is called for its side effects: it creates
+#'         and saves a plot. It does not return a value.
+#'
+#' @examples
+#' \dontrun{
+#'   library(Seurat)
+#'   library(data.table)
+#'   # Assume `seurat_obj` is a preprocessed Seurat object.
+#'   genes.dt <- data.table(gene.id = c("gene1", "gene2"), gene.symbol = c("Gene1", "Gene2"))
+#'   output.file <- "variable_genes_plot.pdf"
+#'   plot.variable.genes(seurat.object = seurat_obj, genes.dt = genes.dt, output.file = output.file)
+#' }
+#'
+#' @importFrom Seurat VariableFeaturePlot LabelPoints
+#' @importFrom ggplot2 ggsave scale_y_log10 labs theme_minimal
 plot.variable.genes <- function(seurat.object, genes.dt, output.file) {
     p <- VariableFeaturePlot(seurat.object, pt.size=0.2)
     p2 <- LabelPoints(plot=p, points=genes.dt$gene.id,
@@ -37,7 +256,36 @@ plot.variable.genes <- function(seurat.object, genes.dt, output.file) {
     ggsave(output.file, plot=p2, width=7, height=7, units="in")
 }
 
-## count mitochondrial genes measured by scRNA-seq and append to Seurat object
+#' Count Mitochondrial Genes in scRNA-Seq data and append to Seurat object
+#'
+#' This function calculates the percentage of mitochondrial genes
+#' (based on gene symbols starting with "MT-" or "mt-" or by matching Ensembl
+#' IDs if no gene symbols match) and appends this as metadata to the Seurat
+#' object.
+#'
+#' @param seurat.obj Seurat object containing single-cell RNA sequencing data.
+#'
+#' @return A modified Seurat object that includes a new metadata field `percent.mt`
+#'         which contains the percentage of mitochondrial gene expression per cell.
+#'
+#' @details The function first attempts to identify mitochondrial genes by looking
+#'          for gene names that start with "MT-" or "mt-". If no such genes are
+#'          found, it will then try to identify mitochondrial genes by their
+#'          Ensembl gene IDs, specifically those that are located on the
+#'          mitochondrial chromosome (MT). This involves querying the Ensembl
+#'          database using the `biomaRt` package.
+#'
+#' @examples
+#' \dontrun{
+#'   library(Seurat)
+#'   # Assuming `seurat_obj` is a Seurat object already created and preprocessed
+#'   updated_seurat_obj <- count.mt.genes(seurat_obj)
+#'   print(updated_seurat_obj[["percent.mt"]])
+#' }
+#'
+#' @importFrom Seurat PercentageFeatureSet
+#' @importFrom biomaRt useMart getBM
+#' @importFrom data.table setDT
 count.mt.genes <- function(seurat.obj) {
     require(Seurat)
     ## if MT- cannot be matched in gene names, then try excluding MT genes which
@@ -180,6 +428,41 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
     return(pre)
 }
 
+#' Process samples and merge into a single Seurat object
+#'
+#' This function reads individual sample data from specified directories and file
+#' formats, creates Seurat objects for each sample, and merges them into a single
+#' Seurat object. The function supports both "mtx" and "h5" file formats.
+#'
+#' @param meta Data.table containing metadata for each sample.
+#'             The metadata table must include the columns `sample`, `sample.dir`,
+#'             and potentially `Name` for h5 files. Each row should correspond to
+#'             a sample with its directory path where the data files are stored.
+#'
+#' @return A merged Seurat object containing data from all samples.
+#'
+#' @details The function processes each sample based on metadata entries. It checks
+#'          for the presence of either "mtx" or "h5" files in the directory specified
+#'          by `sample.dir`. Depending on the file type, it reads the data using
+#'          appropriate methods (`read10xCounts` for "mtx" and `Read10X_h5` for "h5").
+#'          Each dataset is converted into a Seurat object which are then merged into
+#'          one Seurat object. The function requires the Seurat, data.table, and
+#'          DropletUtils packages.
+#'
+#'          It is assumed that all required libraries are installed and loaded.
+#'          Error handling includes checks for valid directory paths, correct sample
+#'          naming in metadata, and the presence of necessary data files.
+#'
+#' @examples
+#' \dontrun{
+#'   # Assume meta is a data.table with appropriate columns
+#'   merged_seurat <- process.samples.and.merge(meta)
+#'   print(merged_seurat)
+#' }
+#'
+#' @importFrom Seurat CreateSeuratObject merge
+#' @importFrom DropletUtils read10xCounts
+#' @importFrom rhdf5 Read10X_h5
 process.samples.and.merge <- function(meta) {
     seurat.list <- list()
     all.samples <- meta[, unique(sample)]

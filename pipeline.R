@@ -1,17 +1,17 @@
 ## High-resolution mapping of cell states in liver disease
 source("properties.R")
 source("helperfunctions.R")
+source("rnaseq.functions.R")
 
 ## Process Ramachandran et al (2019) (see full list in liver_studies.tsv)
 ## -----------------------------------------------------------------------------
-this.study <- 1 ## Ramachandran et al (2019)
-study <- download.study(this.study, studies.dt, root.dir)
+study.name <- studies.dt[1,
+                         gsub("^(\\w+).*", "\\1", Study)]
+study.url <- studies.dt[grep(study.name, Study), `Data URL`]
+filelist.url <- studies.dt[grep(study.name, Study),
+                           gsub("(.*suppl).*", "\\1", `Data URL`)]
 
-## extract archive
-if (!dir.exists(study$dir)) {
-    cmd <- sprintf("tar -xvf %s -C %s", study$study.file, study$dir)
-    system(cmd)
-}
+study.meta <- download.study(study.name, study.url, filelist.url, root.dir)
 
 ## study variable should be a list with at least 2 elements:
 ## $dir -> name of the directory containing extract from the GEO archive

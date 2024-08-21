@@ -1,6 +1,5 @@
 library(data.table)
 library(Seurat) ## install version 4.4.0 and seurat-object 4.1.4
-# library(xlsx)
 library(stringr)
 library(DropletUtils)
 library(HDF5Array)
@@ -8,9 +7,6 @@ library(biomaRt)
 library(ggplot2)
 library(ggExtra)
 library(cowplot)
-
-source("qc/QC_3Pre_merge_D1.R")
-source("qc/QC_4_D1.R")
 
 ## install packages for QC
 ## these packages are only installable with gmm/apps/R/4.0.2.gcc.9.4.0
