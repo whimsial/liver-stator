@@ -38,7 +38,7 @@ source("qc/qc1_emptydrop.R")
 seurat.study1 <- process.samples.and.merge(meta)
 
 ## run QC step 4 to filter out genes/cells that do not pass the thresholds
-seurat.study1.filtered <- filter.seurat(seurat.study1, output.dir=study$dir)
+seurat.study1.filtered <- qc.seurat(seurat.study1, output.dir=study$dir)
 
 ## load core genes for NAFLD
 core.eqtls <- load.rdata(file.path(root.dir, "nafld.diag.core.genes.eqtls.RData"))
@@ -53,6 +53,37 @@ seurat.study1.filtered.hvg <- process.variable.genes(seurat.study1.filtered,
                                                      core.genes=core.genes,
                                                      label.genes=label.genes,
                                                      output.dir=study$dir)
+hvg <- seurat.object@assays$RNA@var.features
+
+## append ADIPOR1 to HVGs
+ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+label.genes <- get.gene.ids(data.table(gene.symbol=label.genes), ensembl)
+ensembl.adipor1 <- label.genes[external_gene_name=="ADIPOR1", ensembl_gene_id]
+hvg <- c(hvg, ensembl.adipor1)
+seurat.for.stator.study1 <- filter.seurat(seurat.study1.filtered.hvg,
+                                          n.cells.keep=4000)
+seurat.for.stator.file <- file.path(study$dir, "seurat.for.stator.Rdata.gz")
+save(seurat.for.stator.study1, file=seurat.for.stator.file)
+
+## extract sparse count matrix, convert to dense matrix and save
+count <- seurat.for.stator.study1[["RNA"]]@data
+count <- as.matrix(count)
+count <- t(count)
+
+## write counts and selected genes to the file
+counts.file <- file.path(study$dir, "counts.csv")
+write.csv(count, file=counts.file, append=F, quote=F, row.names=T, col.names=T)
+genes.file <- file.path(study$dir, "genes.csv")
+write.table(t(hvg), file=genes.file, sep=",", quote=FALSE, col.names=FALSE,
+            row.names=FALSE)
+
+## sopy counts and genes files to Eddie
+cmd <- sprintf("rsync -chavzP %s eddie:/exports/eddie/scratch/aiakvlie/",
+               counts.file)
+system(cmd)
+cmd <- sprintf("rsync -chavzP %s eddie:/exports/eddie/scratch/aiakvlie/",
+               genes.file)
+system(cmd)
 
 ## Process Guilliams et al (2022)
 ## -----------------------------------------------------------------------------

@@ -556,20 +556,20 @@ process.samples.and.merge <- function(meta) {
 #'
 #' @examples
 #' # Filter with default parameters
-#' filtered.seurat <- filter.seurat(my.seurat.object)
+#' seurat <- qc.seurat(my.seurat.object)
 #'
 #' # Filter with custom parameters
-#' filtered.seurat <- filter.seurat(my.seurat.object,
-#'                                  min.features=300,
-#'                                  output.dir="/path/to/output")
+#' seurat <- qc.seurat(my.seurat.object,
+#'                     min.features=300,
+#'                     output.dir="/path/to/output")
 #'
 #' @importFrom Seurat subset
 #' @import ggplot2
 #' @importFrom data.table as.data.table, setDT
 #' @importFrom stats median, mad
-filter.seurat <- function(seurat.object, output.dir,
-                          min.features=500, min.counts=1000, max.mt=10,
-                          n.deviation=3, n.cells=30) {
+qc.seurat <- function(seurat.object, output.dir,
+                      min.features=500, min.counts=1000, max.mt=10,
+                      n.deviation=3, n.cells=30) {
     require(Seurat)
     require(data.table)
     require(ggplot2)
@@ -780,4 +780,32 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
                             output.file)
     }
     return(seurat.object)
+}
+
+filter.seurat <- function(seurat.object, n.cells.keep=4000) {
+    ## randomly sample n.cells.keep cells
+    cells.to.keep <- sample(colnames(seurat.object), size=n.cells.keep,
+                            replace=FALSE)
+
+    dt <- setDT(seurat.object@meta.data)
+    dt <- dt[barcodes %in% cells.to.keep]
+
+    cat(nrow(dt), "of", ncol(seurat.object), "cells selected\n")
+
+    ## perform subset and update metadata manually (this is a workaround for the
+    ## issue where subset function from Seurat package would not run properly)
+    cells.to.keep <- dt$barcode
+    seurat.object.filtered <- seurat.object[, cells.to.keep]
+    seurat.object.filtered@meta.data <- setDF(dt)
+
+    ## run some checks to ensure consistency between meta data and Seurat object
+    if (any(is.na(seurat.object.filtered@meta.data)))
+        stop("NAs detected in meta.data.")
+    if (!identical(colnames(seurat.object.filtered),
+        seurat.object.filtered@meta.data$barcode))
+        stop("Cell names in counts matrix do not match meta.data.")
+    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
+        stop("Cells labeled for removal detected in the filtered Seurat object.")
+
+    return(seurat.object.filtered)
 }
