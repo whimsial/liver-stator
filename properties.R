@@ -5,7 +5,6 @@ library(DropletUtils)
 library(HDF5Array)
 library(biomaRt)
 library(ggplot2)
-library(ggExtra)
 library(cowplot)
 
 ## install packages for QC
