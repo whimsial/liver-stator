@@ -106,21 +106,25 @@ msg.txt <- sprintf("Extracting sample %s", this.sample)
 msg(info, msg.txt)
 
 all.10x.data <- list()
+cells <- NULL
 for (idx in seq_len(nrow(meta.dt))) {
     this.sample <- meta.dt[idx, sample]
     this.sample.dir <- meta.dt[sample==eval(this.sample), unique(sample.dir)]
     this.archives <- meta.dt[sample==eval(this.sample),
                              file.path(unique(study.dir), sample.file)]
+
     ## extract sample data from archives
     this.extracts <- extract.samples(this.archives, this.sample.dir)
     meta.dt[sample==eval(this.sample), extract := this.extracts]
     ## read 10X data from extracted archives
     data <- read.10x.data(this.extracts, this.sample.dir)
     all.10x.data[[this.sample]] <- data
-}
 
-## Perform QC step 1: detection of empty drops
-## -----------------------------------------------------------------------------
+    ## perform QC step 1: detection of empty drops
+    true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
+                                    sample.barcodes=data$sample.barcodes$V1)
+    cells <- c(cells, true.cells)
+}
 
 
 ## Process Ramachandran et al (2019) (see full list in liver_studies.tsv)

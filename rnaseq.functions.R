@@ -249,6 +249,57 @@ read.10x.data <- function(this.extracts, this.sample.dir) {
     stop(msg(error, msg.txt))
 }
 
+#' Identify non-empty droplets in Single-Cell RNA sequencing data
+#'
+#' @param sce SingleCellExperiment object containing count data.
+#' @param sample Character string that specifies the sample identifier which
+#'        will be prefixed to each barcode to create unique column names in the
+#'        count matrix.
+#' @param sample.barcodes Character vector containing barcode sequences.
+#'
+#' @return A character vector containing the names of droplets considered to
+#' contain cells based on the `emptyDrops` analysis or all droplet names if the
+#' matrix was pre-filtered.
+#'
+#' @details
+#' The function retrieves the count matrix from the `sce` object. It modifies
+#' the column names of the count matrix to incorporate the sample identifier.
+#' The matrix is then subjected to the `emptyDrops` method which identifies
+#' likely cell-containing droplets using ambient RNA levels as a reference.
+#' If `emptyDrops` fails (likely due to a pre-filtered matrix), a warning is
+#' issued, and all columns are considered as containing cells. See
+#' https://support.bioconductor.org/p/123554/#123562 for this case.
+#'
+#' @importFrom DropletUtils emptyDrops
+#' @importFrom stats set.seed
+#' @importFrom methods tryCatch
+#' @references
+#' Lun ATL, McCarthy DJ, Marioni JC (2019). A step-by-step workflow for low-level analysis of single-cell RNA-seq data with Bioconductor. F1000Research, 5:2122.
+#' @seealso \code{\link[DropletUtils]{emptyDrops}}, \code{\link[S4Vectors]{DataFrame}}
+remove.emptydrops <- function(sce, sample, sample.barcodes) {
+    set.seed(100)
+    my.count <- counts(sce)
+    colnames(my.count) <- paste0(sample, ":", sample.barcodes)
+
+    msg(info, "Starting emptyDrops")
+    e.out <- tryCatch(
+        emptyDrops(my.count),
+        error=function(e) {
+            warning("The matrix has been alrady pre-filtered.")
+            return(NA)  ## Return NA on error
+        })
+
+    if (class(e.out)!="DFrame")  {
+        true.cells <- colnames(my.count)
+    } else {
+        is.cell <- e.out$FDR <= 0.01
+        is.cell[is.na(is.cell)] <- FALSE
+        true.cells <- colnames(my.count)[is.cell]
+    }
+    msg(info, "Done.")
+    return(true.cells)
+}
+
 #' Retrieve gene symbols from Ensembl IDs
 #'
 #' This function takes a set of Ensembl gene IDs and uses the biomaRt package to
