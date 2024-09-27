@@ -99,6 +99,10 @@ meta.dt <- meta.dt[!grep("json|png|csv", sample.file)]
 meta.dt[study=="Ramachandran", file.type := "mtx"]
 meta.dt[study=="Guilliams", file.type := "H5"]
 
+## save metadata to a file
+meta.file <- file.path(root.dir, "metadata.txt")
+fwrite(meta.dt, file=meta.file, sep="\t")
+
 ## Etract sample files into respective subdirectories
 ## -----------------------------------------------------------------------------
 msg(bold, "Extracting sample files into subdirectories")
@@ -124,6 +128,15 @@ for (idx in seq_len(nrow(meta.dt))) {
     true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
                                     sample.barcodes=data$sample.barcodes$V1)
     cells <- c(cells, true.cells)
+
+    ## perform QC step 2: detection of doublets
+    ## first we run jupyter notebook manually to work out suitable threshold
+    ## and then run the python script for all samples
+    this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
+    cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
+                   --doublet_threshold %f", this.sample.dir, this.file.type,
+                   0.15)
+    system(cmd)
 }
 
 
