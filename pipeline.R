@@ -142,7 +142,7 @@ for (idx in seq_len(nrow(meta.dt))) {
 
 ## QC step 3: process all samples, convert to Seurat and merge
 ## -----------------------------------------------------------------------------
-seurat.all <- process.samples.and.merge(meta.dt)
+seurat.all <- process.samples.and.merge(meta.dt, output.dir=root.dir)
 
 ## QC step 4: filter out genes/cells that do not pass QC thresholds
 ## -----------------------------------------------------------------------------

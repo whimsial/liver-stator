@@ -625,6 +625,8 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
 #'             `sample.dir`, and potentially `file.type` for h5 files. Each row
 #'             should correspond to a sample with its directory path where the
 #'             data files are stored.
+#' @param output.dir Full system path to the directory where merged Seurat file
+#'        will be saved.
 #'
 #' @return A merged Seurat object containing data from all samples.
 #'
@@ -650,7 +652,7 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
 #' @importFrom Seurat CreateSeuratObject merge
 #' @importFrom DropletUtils read10xCounts
 #' @importFrom rhdf5 Read10X_h5
-process.samples.and.merge <- function(meta) {
+process.samples.and.merge <- function(meta, output.dir) {
     seurat.list <- list()
     all.samples <- meta[, unique(sample)]
 
@@ -687,7 +689,7 @@ process.samples.and.merge <- function(meta) {
         seurat.list[[this.sample]] <- create.seurat(pre, this.sample,
                                                     this.sample.dir)
     }
-
+    browser()
     ## Merge all Seurat objects into one
     if (length(seurat.list) > 1) {
         Merge <- merge(x=seurat.list[[1]], y=seurat.list[2:length(seurat.list)],
@@ -701,8 +703,7 @@ process.samples.and.merge <- function(meta) {
     ## Merge <- AddClinicalData(Merge, clinical_data)
 
     ## Save the merged Seurat object
-    seurat.file <- file.path(unique(dirname(meta$sample.dir)),
-                             "merged.seurat.Rdata.gz")
+    seurat.file <- file.path(output.dir, "merged.seurat.Rdata.gz")
     save(Merge, file=seurat.file)
 
     ## Return the merged Seurat object
