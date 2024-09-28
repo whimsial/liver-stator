@@ -97,13 +97,14 @@ meta.dt <- meta.dt[!grep("json|png|csv", sample.file)]
 
 ## assign file types
 meta.dt[study=="Ramachandran", file.type := "mtx"]
-meta.dt[study=="Guilliams", file.type := "H5"]
+meta.dt[study=="Guilliams", file.type := "h5"]
 
 ## save metadata to a file
 meta.file <- file.path(root.dir, "metadata.txt")
 fwrite(meta.dt, file=meta.file, sep="\t")
 
-## Etract sample files into respective subdirectories
+## Etract sample files into respective subdirectories and run per-sample
+## QC steps 1 and 2: detection of empty drops and detection of doublets
 ## -----------------------------------------------------------------------------
 msg(bold, "Extracting sample files into subdirectories")
 msg.txt <- sprintf("Extracting sample %s", this.sample)
@@ -138,6 +139,15 @@ for (idx in seq_len(nrow(meta.dt))) {
                    0.15)
     system(cmd)
 }
+
+## QC step 3: process all samples, convert to Seurat and merge
+## -----------------------------------------------------------------------------
+seurat.all <- process.samples.and.merge(meta.dt)
+
+## QC step 4: filter out genes/cells that do not pass QC thresholds
+## -----------------------------------------------------------------------------
+seurat.all.filtered <- qc.seurat(seurat.all, output.dir=root.dir)
+
 
 
 ## Process Ramachandran et al (2019) (see full list in liver_studies.tsv)

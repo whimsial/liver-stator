@@ -616,28 +616,29 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
 
 #' Process samples, convert to Seurat objects and merge
 #'
-#' This function reads individual sample data from specified directories and file
-#' formats, creates Seurat objects for each sample, and merges them into a single
-#' Seurat object. The function supports both "mtx" and "h5" file formats.
+#' This function reads individual sample data from specified directories and
+#' file ormats, creates Seurat objects for each sample, and merges them into a
+#' single Seurat object. The function supports both "mtx" and "h5" file formats.
 #'
 #' @param meta Data.table containing metadata for each sample.
-#'             The metadata table must include the columns `sample`, `sample.dir`,
-#'             and potentially `file.type` for h5 files. Each row should correspond to
-#'             a sample with its directory path where the data files are stored.
+#'             The metadata table must include the columns `sample`,
+#'             `sample.dir`, and potentially `file.type` for h5 files. Each row
+#'             should correspond to a sample with its directory path where the
+#'             data files are stored.
 #'
 #' @return A merged Seurat object containing data from all samples.
 #'
-#' @details The function processes each sample based on metadata entries. It checks
-#'          for the presence of either "mtx" or "h5" files in the directory specified
-#'          by `sample.dir`. Depending on the file type, it reads the data using
-#'          appropriate methods (`read10xCounts` for "mtx" and `Read10X_h5` for "h5").
-#'          Each dataset is converted into a Seurat object which are then merged into
-#'          one Seurat object. The function requires the Seurat, data.table, and
-#'          DropletUtils packages.
+#' @details The function processes each sample based on metadata entries. It
+#'          checks for the presence of either "mtx" or "h5" files in the
+#'          directory specified by `sample.dir`. Depending on the file type, it
+#'          reads the data using appropriate methods (`read10xCounts` for "mtx"
+#'          and `Read10X_h5` for "h5"). Each dataset is converted into a Seurat
+#'          object which are then merged into one Seurat object. The function
+#'          requires the Seurat, data.table, and DropletUtils packages.
 #'
 #'          It is assumed that all required libraries are installed and loaded.
-#'          Error handling includes checks for valid directory paths, correct sample
-#'          naming in metadata, and the presence of necessary data files.
+#'          Error handling includes checks for valid directory paths, correct
+#'          sample naming in metadata, and the presence of necessary data files.
 #'
 #' @examples
 #' \dontrun{
@@ -656,37 +657,31 @@ process.samples.and.merge <- function(meta) {
     ## Loop through each sample and create a Seurat object
     for (this.sample in all.samples) {
         this.meta <- meta[sample == eval(this.sample)][1]
-        cat("Processing sample:", this.sample, "\n")
+        msg.txt <- sprintf("Processing sample: %s", this.sample)
+        msg(info, msg.txt)
 
-        if (this.meta[, .N] != 1) {
-            stop(msg(error, "Metadata should be a data.table with 1 row"))
-        }
-
-        if (this.meta$sample != this.sample) {
-            stop(msg(error, "Sample name is not matched to metadata. Check input."))
-        }
-
-        this.sample.dir <- this.meta[, unique(sample.dir)]
+        this.sample.dir <- this.meta[, sample.dir]
         if (!dir.exists(this.sample.dir)) {
-            stop(msg(error, "Sample directory listed in metadata does not exist. Check input."))
+            msg.txt <- "Sample directory listed in metadata does not exist.
+            Check input."
+            stop(msg(error, msg.txt))
         }
 
-        ## Ramachandran et al have data for SingleCellExperiment consisting of
-        ## matrix.mtx, genes.tsv and barcodes.tsv.
-        ## It should be read using read10xCounts and then the sparse matrix of
-        ## counts should be extracted and passed to Seurat
-        ## Guilliams et al report data in h5 format. These files should be read
-        ## with Read10X_h5 function.
+        ## Studies may have sample data in mtx or h5 format which are to be
+        ## read by read10xCounts and Read10X_h5 respectively.
         ## Thus, we handle both cases here conditional on file types.
-        if (any(grepl("mtx", list.files(this.sample.dir)))) {
+        sample.files <- list.files(this.sample.dir)
+        if (any(grepl("mtx", sample.files))) {
             pre <- read10xCounts(this.sample.dir, col.names=TRUE)
             pre <- counts(pre)
-        } else if (any(grepl("h5", list.files(this.sample.dir)))) {
-            this.h5.file <- this.meta[, Name]
+        } else if (any(grepl("h5", sample.files))) {
+            this.h5.file <- sample.files[grep("*.h5", sample.files)]
             pre <- Read10X_h5(file.path(this.sample.dir, this.h5.file),
                               use.names=TRUE, unique.features=TRUE)
         } else {
-            stop(msg(error, "Either .mtx or .h5 file should be present. Check input directory."))
+            msg.txt <- "Either .mtx or .h5 file should be present.
+            Check input directory."
+            stop(msg(error, msg.txt))
         }
 
         seurat.list[[this.sample]] <- create.seurat(pre, this.sample,
@@ -776,9 +771,9 @@ qc.seurat <- function(seurat.object, output.dir,
         meta.data[nCount_RNA > count.threshold | nFeature_RNA > feature.threshold,
                   qc.fail := 1]
         to.remove <- meta.data[qc.fail==1, barcodes]
-        cat(length(to.remove),
-            "cells will be removed from sample", this.sample,
-            "due to feature/RNA count threshold.\n")
+        msg.txt <- sprintf("%s cells removed from %s due to feature/RNA count threshold",
+                           length(to.remove), this.sample)
+        msg(info, msg.txt)
         cells.to.remove <- c(cells.to.remove, to.remove)
     }
 
@@ -792,28 +787,28 @@ qc.seurat <- function(seurat.object, output.dir,
     df <- seurat.object@meta.data
     df <- df[barcodes %in% cells.to.keep]
 
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by MAD\n")
+    msg.txt <- sprintf("%s of %s cells remain after filtering by MAD")
+    msg(info, msg.txt)
 
     ## Remove cells with N features < min.features
     df <- df[nFeature_RNA>min.features]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by nFeature_RNA\n")
+    msg.txt <- sprintf("%s of %s cells remain after filtering by nFeature_RNA")
+    msg(info, msg.txt)
 
     ## Remove cells with N transcripts < min.counts (RNA counts)
     df <- df[nCount_RNA>min.counts]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by nCount_RNA\n")
+    msg.txt <- sprintf("%s of %s cells remain after filtering by nCount_RNA")
+    msg(info, msg.txt)
 
     ## Remove cells with % MT genes > max.mt%
     df <- df[percent.mt<max.mt]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by percent.mt\n")
+    msg.txt <- sprintf("%s of %s cells remain after filtering by percent.mt")
+    msg(info, msg.txt)
 
     ## Remove cells with doublet prediction > 0
     df <- df[doublet_prediction==0]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after removing doublets\n")
+    msg.txt <- sprintf("%s of %s cells remain after removing doublets")
+    msg(info, msg.txt)
 
     ## perform subset and update metadata manually (this is a workaround for the
     ## issue where subset function from Seurat package would not run properly)
@@ -848,9 +843,8 @@ qc.seurat <- function(seurat.object, output.dir,
     counts <- GetAssayData(object=seurat.object.filtered, slot="counts")
     nonzero.counts <- counts > 0
     keep.genes <- Matrix::rowSums(nonzero.counts) >= n.cells
-    cat(sum(keep.genes), "of", nrow(seurat.object.filtered),
-        "genes are expressed in more than", n.cells,
-        "cells and will be retained.\n")
+    msg.txt <- sprintf("%s of %s genes are expressed in > %s cells and are retained")
+    msg(info, msg.txt)
     seurat.object.filtered <- seurat.object.filtered[keep.genes, ]
     seurat.object.filtered@meta.data <- setDF(dt)
     save(seurat.object.filtered,
