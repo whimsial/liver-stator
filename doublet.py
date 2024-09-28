@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import argparse
+import glob
 
 ## set graphics parameters
 plt.rcParams['font.sans-serif'] = 'Arial'
@@ -43,7 +44,14 @@ else:
 
 ## load count matrix
 if args.data_type=="h5":
-    counts_matrix = sc.read_10x_h5(s)
+    ## find h5 file within sample directory
+    full_path = os.path.join(s, "*.h5")
+    sample_files = glob.glob(full_path)
+    if sample_files:
+        sample_file = sample_files[0]
+    else:
+        raise FileNotFoundError(f"No *.h5 files found in '{s}'")
+    counts_matrix = sc.read_10x_h5(sample_file)
 else:
     counts_matrix = sc.read_10x_mtx(s, var_names='gene_symbols', cache=True)
 
