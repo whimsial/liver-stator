@@ -689,7 +689,7 @@ process.samples.and.merge <- function(meta, output.dir) {
         seurat.list[[this.sample]] <- create.seurat(pre, this.sample,
                                                     this.sample.dir)
     }
-    browser()
+
     ## Merge all Seurat objects into one
     if (length(seurat.list) > 1) {
         Merge <- merge(x=seurat.list[[1]], y=seurat.list[2:length(seurat.list)],
@@ -703,8 +703,8 @@ process.samples.and.merge <- function(meta, output.dir) {
     ## Merge <- AddClinicalData(Merge, clinical_data)
 
     ## Save the merged Seurat object
-    seurat.file <- file.path(output.dir, "merged.seurat.Rdata.gz")
-    save(Merge, file=seurat.file)
+    seurat.file <- file.path(output.dir, "merged.seurat.RDS")
+    saveRDS(Merge, file=seurat.file)
 
     ## Return the merged Seurat object
     return(Merge)
@@ -718,6 +718,7 @@ process.samples.and.merge <- function(meta, output.dir) {
 #' visually assess the quality of the data after filtering.
 #'
 #' @param seurat.object `Seurat` object with single-cell RNA sequence data.
+#' @param all.samples Vectory of strings containing sample names.
 #' @param output.dir Full path to the directory where the diagnostic plot
 #'        will be saved.
 #' @param min.features Integer specifying minimum number of features (genes)
@@ -749,86 +750,70 @@ process.samples.and.merge <- function(meta, output.dir) {
 #' @import ggplot2
 #' @importFrom data.table as.data.table, setDT
 #' @importFrom stats median, mad
-qc.seurat <- function(seurat.object, output.dir,
+qc.seurat <- function(seurat.object, all.samples, output.dir,
                       min.features=500, min.counts=1000, max.mt=10,
                       n.deviation=3, n.cells=30) {
     require(Seurat)
     require(data.table)
     require(ggplot2)
 
-    ## Remove cells with transcripts/cell counts greater than 3 median absolute
-    ## deviation (MAD) away from the median
-    all.samples <- meta[, unique(sample)]
-
+    ## remove cells with outlier transcripts/cell counts
+    msg.txt <- "Removing cells with outlier transcripts/cell counts"
+    msg(info, msg.txt)
     cells.to.remove <- NULL
+
     for (this.sample in all.samples) {
-        meta.data <- setDT(seurat.object@meta.data)[sample==eval(this.sample)]
+        meta.data <- setDT(seurat.object@meta.data)[sample == eval(this.sample)]
 
         count.threshold <- median(meta.data$nCount_RNA) +
                            n.deviation * mad(meta.data$nCount_RNA)
         feature.threshold <- median(meta.data$nFeature_RNA) +
                              n.deviation * mad(meta.data$nFeature_RNA)
-        meta.data[, qc.fail := 0]
-        meta.data[nCount_RNA > count.threshold | nFeature_RNA > feature.threshold,
-                  qc.fail := 1]
+
+        meta.data[, qc.fail := (nCount_RNA > count.threshold |
+                                nFeature_RNA > feature.threshold)]
         to.remove <- meta.data[qc.fail==1, barcodes]
-        msg.txt <- sprintf("%s cells removed from %s due to feature/RNA count threshold",
+
+        msg.txt <- sprintf("%s cells removed from %s due to thresholds",
                            length(to.remove), this.sample)
         msg(info, msg.txt)
         cells.to.remove <- c(cells.to.remove, to.remove)
     }
 
-    if (!all(cells.to.remove %in% colnames(seurat.object)))
-        stop(msg(error, "Cells barcodes were not matched to Seurat colnames.
-              Check barcode names."))
+    ## check cell barcodes against Seurat object
+    if (!all(cells.to.remove %in% colnames(seurat.object))) {
+        stop("Cells barcodes were not matched to Seurat colnames. Check barcode names.")
+    }
 
-    cells.to.keep <- colnames(seurat.object)[!colnames(seurat.object)
-                                             %in% cells.to.remove]
-
-    df <- seurat.object@meta.data
-    df <- df[barcodes %in% cells.to.keep]
-
-    msg.txt <- sprintf("%s of %s cells remain after filtering by MAD")
+    ## Update metadata, perform subsetting and filtering of genes
+    cells.to.keep <- setdiff(colnames(seurat.object), cells.to.remove)
     msg(info, msg.txt)
 
-    ## Remove cells with N features < min.features
-    df <- df[nFeature_RNA>min.features]
-    msg.txt <- sprintf("%s of %s cells remain after filtering by nFeature_RNA")
+    df <- seurat.object@meta.data[barcodes %in% cells.to.keep, ]
+
+    ## sequential filtering of genes for various QC metrics
+    df <- df[df$nFeature_RNA > min.features & df$nCount_RNA > min.counts &
+             df$percent.mt < max.mt & df$doublet_prediction == 0, ]
+
+    cells.to.keep <- df$barcodes
+    msg.txt <- sprintf("%s cells remain after all filtering steps",
+                       length(cells.to.keep))
     msg(info, msg.txt)
 
-    ## Remove cells with N transcripts < min.counts (RNA counts)
-    df <- df[nCount_RNA>min.counts]
-    msg.txt <- sprintf("%s of %s cells remain after filtering by nCount_RNA")
-    msg(info, msg.txt)
-
-    ## Remove cells with % MT genes > max.mt%
-    df <- df[percent.mt<max.mt]
-    msg.txt <- sprintf("%s of %s cells remain after filtering by percent.mt")
-    msg(info, msg.txt)
-
-    ## Remove cells with doublet prediction > 0
-    df <- df[doublet_prediction==0]
-    msg.txt <- sprintf("%s of %s cells remain after removing doublets")
-    msg(info, msg.txt)
-
-    ## perform subset and update metadata manually (this is a workaround for the
-    ## issue where subset function from Seurat package would not run properly)
-    cells.to.keep <- df$barcode
+    ## update Seurat object with filtered metadata
     seurat.object.filtered <- seurat.object[, cells.to.keep]
-    seurat.object.filtered@meta.data <- df[barcodes %in% cells.to.keep]
+    seurat.object.filtered@meta.data <- df
 
-    ## run some checks to ensure consistency between meta data and Seurat object
-    if (any(is.na(seurat.object.filtered@meta.data)))
-        stop(msg(error, "NAs detected in meta.data."))
-    if (!identical(colnames(seurat.object.filtered),
-        seurat.object.filtered@meta.data$barcode))
-        stop(msg(error, "Cell names in counts matrix do not match meta.data."))
-    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
-        stop(msg(error, "Cells labeled for removal detected in the filtered Seurat object."))
+    ## consistency checks
+    if (any(is.na(df))) {
+        stop("NAs detected in meta.data.")
+    }
+    if (!identical(colnames(seurat.object.filtered), df$barcode)) {
+        stop("Cell names in counts matrix do not match Seurat metadata.")
+    }
 
     ## plot the counts after filtering
-    dt <- setDT(seurat.object.filtered@meta.data)
-    p <- ggplot(dt, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
+    p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
         geom_point() +
         scale_colour_gradient(low="gray90", high="black") +
         stat_smooth(method=lm) +
@@ -836,20 +821,23 @@ qc.seurat <- function(seurat.object, output.dir,
         scale_y_log10() +
         labs(x="RNA counts, Log10", y="N transcripts, Log10")
     plot.file <- file.path(output.dir, "feature.plot.png")
-    ggsave(file=plot.file, p)
+    ggsave(plot.file, plot=p)
 
-    ## keep only genes which are expressed in n.cells or more cells
+    ## gene filtering based on cell presence
     gene.detection.rate <- PercentageFeatureSet(seurat.object.filtered,
                                                 pattern="^", assay="RNA")
     counts <- GetAssayData(object=seurat.object.filtered, slot="counts")
     nonzero.counts <- counts > 0
     keep.genes <- Matrix::rowSums(nonzero.counts) >= n.cells
-    msg.txt <- sprintf("%s of %s genes are expressed in > %s cells and are retained")
+
+    msg.txt <- sprintf("Keep %s genes which are expressed in >%s cells.",
+                       sum(keep.genes), n.cells)
     msg(info, msg.txt)
+
     seurat.object.filtered <- seurat.object.filtered[keep.genes, ]
-    seurat.object.filtered@meta.data <- setDF(dt)
-    save(seurat.object.filtered,
-         file=file.path(output.dir, "merged.filtered.seurat.Rdata.gz"))
+    saveRDS(seurat.object.filtered,
+            file=file.path(output.dir, "filtered.seurat.RDS"))
+
     return(seurat.object.filtered)
 }
 

@@ -146,7 +146,9 @@ seurat.all <- process.samples.and.merge(meta.dt, output.dir=root.dir)
 
 ## QC step 4: filter out genes/cells that do not pass QC thresholds
 ## -----------------------------------------------------------------------------
-seurat.all.filtered <- qc.seurat(seurat.all, output.dir=root.dir)
+seurat.all.filtered <- qc.seurat(seurat.all,
+                                 all.samples=meta.dt[, unique(sample)],
+                                 output.dir=root.dir)
 
 
 
