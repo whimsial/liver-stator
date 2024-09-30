@@ -656,7 +656,7 @@ process.samples.and.merge <- function(meta, output.dir) {
     seurat.list <- list()
     all.samples <- meta[, unique(sample)]
 
-    ## Loop through each sample and create a Seurat object
+    ## Loop through samples and create Seurat objects
     for (this.sample in all.samples) {
         this.meta <- meta[sample == eval(this.sample)][1]
         msg.txt <- sprintf("Processing sample: %s", this.sample)
@@ -746,16 +746,17 @@ process.samples.and.merge <- function(meta, output.dir) {
 #'                     min.features=300,
 #'                     output.dir="/path/to/output")
 #'
-#' @importFrom Seurat subset
-#' @import ggplot2
-#' @importFrom data.table as.data.table, setDT
-#' @importFrom stats median, mad
+#' @require Seurat
+#' @require data.table
+#' @require ggplot2
+#' @require biomaRt
 qc.seurat <- function(seurat.object, all.samples, output.dir,
                       min.features=500, min.counts=1000, max.mt=10,
                       n.deviation=3, n.cells=30) {
     require(Seurat)
     require(data.table)
     require(ggplot2)
+    require(biomaRt)
 
     ## remove cells with outlier transcripts/cell counts
     msg.txt <- "Removing cells with outlier transcripts/cell counts"
@@ -804,14 +805,6 @@ qc.seurat <- function(seurat.object, all.samples, output.dir,
     seurat.object.filtered <- seurat.object[, cells.to.keep]
     seurat.object.filtered@meta.data <- df
 
-    ## consistency checks
-    if (any(is.na(df))) {
-        stop("NAs detected in meta.data.")
-    }
-    if (!identical(colnames(seurat.object.filtered), df$barcode)) {
-        stop("Cell names in counts matrix do not match Seurat metadata.")
-    }
-
     ## plot the counts after filtering
     p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
         geom_point() +
@@ -822,6 +815,27 @@ qc.seurat <- function(seurat.object, all.samples, output.dir,
         labs(x="RNA counts, Log10", y="N transcripts, Log10")
     plot.file <- file.path(output.dir, "feature.plot.png")
     ggsave(plot.file, plot=p)
+
+    ## filer all genes which cannot be matched to Ensembl
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+
+    ## ensure all genes in the Seurat object are labelled by Ensembl IDs
+    genes <- rownames(seurat.object.filtered)
+    ensembl.ids <- genes[grep("^ENSG", genes)]
+    gene.symbols <- genes[!genes %in% ensembl.ids]
+    msg.txt <- sprintf("%s Ensembl ids and %s gene symbols found in Seurat object.",
+                       length(ensembl.ids), length(gene.symbols))
+    msg(info, msg.txt)
+    if (length(gene.symbols) != 0) {
+        msg(info, "Converting gene symbols to Ensembl ids.")
+        gene.symbols <- data.table(gene.id=NA, gene.symbol=gene.symbols)
+        matched.ids <- get.gene.ids(gene.symbols, ensembl)
+    }
+    all.ensembl.ids <- c(ensembl.ids, matched.ids$ensembl_gene_id)
+    msg.txt <- sprintf("%s genes with Ensembl ids will be retained.",
+                       length(all.ensembl.ids))
+    msg(info, msg.txt)
+    seurat.object.filtered <- seurat.object.filtered[all.ensembl.ids, ]
 
     ## gene filtering based on cell presence
     gene.detection.rate <- PercentageFeatureSet(seurat.object.filtered,
@@ -835,6 +849,18 @@ qc.seurat <- function(seurat.object, all.samples, output.dir,
     msg(info, msg.txt)
 
     seurat.object.filtered <- seurat.object.filtered[keep.genes, ]
+
+    ## subsetting sets all metadata to NA, so we need to update it
+    seurat.object.filtered@meta.data <- df
+
+    ## consistency checks
+    if (any(is.na(df))) {
+        stop("NAs detected in meta.data.")
+    }
+    if (!identical(colnames(seurat.object.filtered), df$barcode)) {
+        stop("Cell names in counts matrix do not match Seurat metadata.")
+    }
+
     saveRDS(seurat.object.filtered,
             file=file.path(output.dir, "filtered.seurat.RDS"))
 
@@ -884,14 +910,14 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     seurat.object <- FindVariableFeatures(seurat.object, selection.method="vst",
                                           nfeatures=1000)
 
+    ## connect to Ensembl via BioMart
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+
     ## obtain top variable genes
     top.variable.genes <- head(VariableFeatures(seurat.object),
                                n.top.variable.genes)
     top.variable.genes <- data.table(gene.id=top.variable.genes,
                                      gene.symbol=top.variable.genes)
-
-    ## connect to Ensembl via BioMart
-    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
 
     ## map gene IDs to Ensembl, depending on the format
     if (any(grepl("ENSG", top.variable.genes))) {
@@ -906,8 +932,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
                            gene.id:=ensembl_gene_id]
     }
 
-    cat("Printing top", n.top.variable.genes,
-        "variable genes with Ensembl ids.\n")
+    msg.txt <- sprintf("Printing top %s variable genes with Ensembl ids",
+                       n.top.variable.genes)
+    msg(info, msg.txt)
     print(top.variable.genes)
 
     ## plot most variable genes on Expression-Variance plot
@@ -916,7 +943,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
 
     ## process core genes if specified
     if (!is.null(core.genes)) {
-        cat(length(core.genes), "genes of interest were provided.\n")
+        msg.txt <- sprintf("%s genes of interest were provided",
+                           length(core.genes))
+        msg(info, msg.txt)
         selected.genes <- data.table(gene.id=core.genes, gene.symbol=core.genes)
         ensembl.ids <- get.gene.ids(selected.genes, ensembl)
         selected.genes[ensembl.ids, on=c(gene.symbol="external_gene_name"),
@@ -925,8 +954,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
         all.hvg <- head(VariableFeatures(seurat.object), 1000)
         select.ids <- intersect(all.hvg, selected.genes$gene.id)
         selected.genes.matched <- selected.genes[gene.id %in% select.ids]
-        cat(nrow(selected.genes.matched), "of", nrow(selected.genes),
-            "genes matched in 1000 most highly variable genes.\n")
+        msg.txt <- sprintf("%s of %s genes matched in 1000 most highly variable genes:",
+                           n.top.variable.genes, n.top.variable.genes)
+        msg(info, msg.txt)
         print(selected.genes.matched)
 
         ## append labeled genes if specified
@@ -951,7 +981,7 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     return(seurat.object)
 }
 
-filter.seurat <- function(seurat.object, n.cells.keep=4000) {
+filter.seurat <- function(seurat.object, output.dir, n.cells.keep=4000) {
     ## randomly sample n.cells.keep cells
     cells.to.keep <- sample(colnames(seurat.object), size=n.cells.keep,
                             replace=FALSE)
@@ -975,6 +1005,9 @@ filter.seurat <- function(seurat.object, n.cells.keep=4000) {
         stop(msg(error, "Cell names in counts matrix do not match meta.data."))
     if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
         stop(msg(error, "Cells labeled for removal detected in the filtered Seurat object."))
+
+    seurat.for.stator.file <- file.path(output.dir, "seurat.for.stator.RDS")
+    saveRDS(seurat.object.filtered, file=seurat.for.stator.file)
 
     return(seurat.object.filtered)
 }
