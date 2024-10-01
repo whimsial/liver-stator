@@ -1,45 +1,63 @@
+#' Report a message to the terminal
+#'
+#' @param mode One of \sQuote{info} (normal messages), \sQuote{note} (messages
+#'        that require some highlighting), \sQuote{warn} (important information
+#'        the user should definitely notice).
+#' @param ... Strings to be reported.
+#' @param LF Whether a newline character should be added at the end of the
+#'        message (\code{TRUE} by default).
+#'
+#' @import crayon
+#' @noRd
+msg <- function(mode, ..., LF=TRUE) {
+    message(mode(...), appendLF=LF)
+}
+info <- crayon::reset
+note <- crayon::green
+warn <- crayon::yellow
+bold <- crayon::bold
+error <- crayon::red
+
 #' Download GEO study data and file list
 #'
 #' This function downloads a specified study and its associated file list to a
-#' designated directory. It creates a new directory for the study,
-#' downloads the main study file and a file list from provided URLs,
-#' and returns a list of properties about the downloaded study.
+#' designated directory. It creates a new directory for the study and downloads
+#' the main study file and a file list from provided URLs.
 #'
 #' @param study.name Character string specifying the name of the study.
 #'        This name is used to create a subdirectory within `root.dir`.
+#' @param study.file Full system path to the archive to which the study will be
+#'        saved. This file will be created if it does not exist.
 #' @param study.url GEO URL from where the study should be downloaded.
+#' @param filelist.file Full system path to the file where study file list will
+#'        be saved. This file will be created if it does not exist.
 #' @param filelist.url GEO URL containing the URL from where the file list
 #'        should be downloaded.
-#' @param root.dir Full path to the root directory under which a new directory
-#'        will be created for the study.
 #'
-#' @return A list with the following components:
-#'   \itemize{
-#'     \item \code{name}: The name of the study.
-#'     \item \code{dir}: The directory path where the study and file list are stored.
-#'     \item \code{study.file}: The path to the downloaded study file.
-#'     \item \code{study.file.list}: The path to the downloaded file list.
-#'   }
+#' @return NULL
 #'
 #' @examples
 #' \dontrun{
 #'   study.info <- download.study(
 #'      "Ramachandran",
+#'      "~/Ramachandran/GSE136103_RAW.tar",
 #'      "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/GSE136103_RAW.tar",
-#'      "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl",
-#'      getwd())
-#'   print(study.info)
+#'      "~/Ramachandran/filelist.txt",
+#'      "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/filelist.txt")
 #' }
-#'
-download.study <- function(study.name, study.url, filelist.url, root.dir) {
-    study.dir <- file.path(root.dir, study.name)
+download.study <- function(study.name, study.file, study.url,
+                           filelist.file, filelist.url) {
+    study.dir <- dirname(study.file)
     dir.create(study.dir, showWarnings=FALSE)
 
-    study.file <- file.path(study.dir, basename(study.url))
-    filelist.file <- file.path(study.dir, basename(filelist.url))
+    msg.txt <- sprintf("Downloading %s study to %s ...",
+                       study.name, study.dir)
+    msg(note, msg.txt)
 
     if (!file.exists(study.file)) {
-        cat("Downloading from", study.url, "to", study.file, "...\n")
+        msg.txt <- sprintf("Downloading from %s to %s ...",
+                           study.url, study.file)
+        msg(info, msg.txt)
         curl.cmd <- "curl %s --output %s --retry 100 --retry-delay 2 -s"
         system(sprintf(curl.cmd, study.url, study.file))
         system(sprintf(curl.cmd, filelist.url, filelist.file))
@@ -51,13 +69,10 @@ download.study <- function(study.name, study.url, filelist.url, root.dir) {
         system(cmd)
     }
 
-    study.properties <- list(name=study.name, dir=study.dir,
-                             study.file=study.file,
-                             study.file.list=filelist.file)
-    return(study.properties)
+    msg(note, "Done.")
 }
 
-#' Download and parse GEO Soft Metadata into R Data Table
+#' Download and parse GEO Soft Metadata into R data.table
 #'
 #' This function downloads a GEO soft file from a specified URL, decompresses it,
 #' and parses it to extract sample identifiers and titles, organizing them into
@@ -65,9 +80,7 @@ download.study <- function(study.name, study.url, filelist.url, root.dir) {
 #'
 #' @param soft.url GEO URL from where the GEO soft file should be downloaded.
 #' @param soft.file Full path with the filename of the file where the
-#'        downloaded and extracted data will be stored. The function
-#'        will append ".gz" to this filename for the compressed download
-#'        and remove it after extraction.
+#'        downloaded and extracted data will be stored.
 #'
 #' @return A `data.table` object containing two columns:
 #'   \itemize{
@@ -86,21 +99,25 @@ download.study <- function(study.name, study.url, filelist.url, root.dir) {
 #' @examples
 #' \dontrun{
 #'   soft.url <- "http://example.com/sample.soft.gz"
-#'   soft.file <- "path/to/sample.soft"
+#'   soft.file <- "path/to/sample.soft.gz"
 #'   sample.data <- parse.soft(soft.url, soft.file)
 #'   print(sample.data)
 #' }
 #'
 #' @import data.table
-#' @export
 parse.soft <- function(soft.url, soft.file) {
+    msg.txt <- sprintf("Downloading softfile from %s to %s.",
+                       soft.url, soft.file)
+    msg(info, msg.txt)
+
     ## download soft file
     cmd <- sprintf("curl %s --output %s --retry 100 --retry-delay 2 -s",
-                   soft.url, paste0(soft.file, ".gz"))
+                   soft.url, soft.file)
     system(cmd)
 
     ## extract and read into R
-    cmd <- sprintf("gunzip -c %s > %s", paste0(soft.file, ".gz"), soft.file)
+    cmd <- sprintf("gunzip -c %s > %s", soft.file,
+                   gsub(".gz", "", soft.file))
     system(cmd)
     tmp <- readLines(soft.file)
 
@@ -112,6 +129,175 @@ parse.soft <- function(soft.url, soft.file) {
     dt[, sample := gsub("\\^SAMPLE = ", "", sample)]
     dt[, sample.title := gsub("\\!Sample_title = ", "", sample.title)]
     return(dt)
+}
+
+#' Extract sample files from GEO archives
+#'
+#' This function checks for the existence of specified archive files, creates a
+#' directory for sample extraction, and extracts relevant files based on file
+#' type. Extracted files are either uncompressed or linked depending on the
+#' file extension.
+#'
+#' @param this.archives Character vector containing paths to archive files.
+#' @param this.sample.dir Character string indicating the directory where
+#'        samples should be extracted.
+#'
+#' @return A character vector of paths to extracted files.
+#'
+#' @details
+#' The function first checks if all provided archive files exist. If any file
+#' does not exist, the function stops and returns an error message.
+#'
+#' If the archive files exist, the function proceeds to create the specified
+#' output directory if it does not already exist.
+#' It then checks the types of files contained in the archives:
+#' - For compressed `.gz` files containing `barcodes.tsv`, `genes.tsv`, or
+#'   `matrix.mtx`, it decompresses them into the specified directory.
+#' - For `.h5` files, it creates a symbolic link in the target directory
+#' pointing to the original file.
+#'
+#' Only files matching the specified patterns are processed. Other file types
+#' within the archives are ignored.
+extract.samples <- function(this.archives, this.sample.dir) {
+    if (!all(file.exists(this.archives))) {
+        msg.txt <- sprintf("Provided archives do not exist:\n %s \n",
+                           this.archives)
+        stop(msg(error, msg.txt))
+    }
+    dir.create(this.sample.dir, showWarnings=TRUE)
+
+    ## catch if archives contain csv and mtx files and extract them
+    re <- ".*(barcodes.tsv|genes.tsv|matrix.mtx).gz"
+    if (any(grepl(re, this.archives))) {
+        this.extracts <- gsub(re, "\\1", basename(this.archives))
+        this.extracts <- file.path(this.sample.dir, this.extracts)
+        cmd <- sprintf("gunzip -c %s > %s", this.archives, this.extracts)
+        for (this.cmd in cmd) system(this.cmd)
+    }
+
+    ## otherwise if its an h5 archive we make a symbolic link
+    if (any(grepl("h5", this.archives))) {
+        this.extracts <- file.path(this.sample.dir, basename(this.archives))
+        if (!file.exists(this.extracts))
+            file.symlink(this.archives, this.extracts)
+    }
+
+    return(this.extracts)
+}
+
+#' Read 10x genomics data
+#'
+#' This function reads 10x Genomics data from provided file paths or directories
+#' containing either MTX files (barcodes.tsv, genes.tsv, matrix.mtx) or an H5
+#' file.
+#'
+#' @param this.extracts Character vector containing paths to extracted files or
+#'        an H5 file.
+#' @param this.sample.dir Character string indicating the directory where the
+#'        10x experiment data is located or will be read from.
+#'
+#' @return A list containing two components:
+#' \itemize{
+#'  \item{sample.barcodes}{A data table of barcodes read from the provided files.}
+#'  \item{sce}{A SingleCellExperiment object containing the expression data read from the files.}
+#' }
+#'
+#' @details
+#' The function first checks if MTX files (barcodes.tsv, genes.tsv, matrix.mtx)
+#' are present in the file paths provided by `this.extracts`.
+#' If these files are present, it reads the barcodes and uses
+#' \code{read10xCounts} to read the 10x experiment data from `this.sample.dir`.
+#'
+#' If an H5 file is provided, it reads the barcodes and the single-cell e
+#' xperiment data directly from the H5 file using \code{h5read} and
+#' \code{read10xCounts}, respectively.
+#'
+#' The function returns an error if neither MTX files nor an H5 file are found.
+#'
+#' @importFrom data.table fread data.table
+#' @importFrom rhdf5 h5read
+#' @importFrom DropletUtils read10xCounts
+read.10x.data <- function(this.extracts, this.sample.dir) {
+    ## check if MTX files were provided
+    mtx.files <- c("barcodes.tsv", "genes.tsv", "matrix.mtx")
+    if (all(mtx.files %in% basename(this.extracts))) {
+        ## read barcodes
+        sample.barcodes.file <- this.extracts[grep("barcodes", this.extracts)]
+        sample.barcodes <- fread(sample.barcodes.file, header=FALSE)
+
+        ## read 10x experiment from sample dir
+        sce <- read10xCounts(this.sample.dir)
+        data <- list(sample.barcodes=sample.barcodes, sce=sce)
+        return(data)
+    }
+
+    ## alternatively h5 files should have been provided
+    if (grepl("h5", this.extracts)) {
+        ## read barcodes
+        barcode.path <- "matrix/barcodes"
+        sample.barcodes <- h5read(this.extracts, barcode.path)
+        sample.barcodes <- data.table(V1=sample.barcodes)
+
+        ## read 10x experiment from sample dir
+        sce <- read10xCounts(this.extracts)
+        data <- list(sample.barcodes=sample.barcodes, sce=sce)
+        return(data)
+    }
+
+    msg.txt <- "Files not recognised.
+    Either barcodes.tsv/genes.tsv/matrix.mtx or an h5 file are required."
+    stop(msg(error, msg.txt))
+}
+
+#' Identify non-empty droplets in Single-Cell RNA sequencing data
+#'
+#' @param sce SingleCellExperiment object containing count data.
+#' @param sample Character string that specifies the sample identifier which
+#'        will be prefixed to each barcode to create unique column names in the
+#'        count matrix.
+#' @param sample.barcodes Character vector containing barcode sequences.
+#'
+#' @return A character vector containing the names of droplets considered to
+#' contain cells based on the `emptyDrops` analysis or all droplet names if the
+#' matrix was pre-filtered.
+#'
+#' @details
+#' The function retrieves the count matrix from the `sce` object. It modifies
+#' the column names of the count matrix to incorporate the sample identifier.
+#' The matrix is then subjected to the `emptyDrops` method which identifies
+#' likely cell-containing droplets using ambient RNA levels as a reference.
+#' If `emptyDrops` fails (likely due to a pre-filtered matrix), a warning is
+#' issued, and all columns are considered as containing cells. See
+#' https://support.bioconductor.org/p/123554/#123562 for this case.
+#'
+#' @importFrom DropletUtils emptyDrops
+#' @importFrom stats set.seed
+#' @importFrom methods tryCatch
+#' @references
+#' Lun ATL, McCarthy DJ, Marioni JC (2019). A step-by-step workflow for low-level analysis of single-cell RNA-seq data with Bioconductor. F1000Research, 5:2122.
+#' @seealso \code{\link[DropletUtils]{emptyDrops}}, \code{\link[S4Vectors]{DataFrame}}
+remove.emptydrops <- function(sce, sample, sample.barcodes) {
+    set.seed(100)
+    my.count <- counts(sce)
+    colnames(my.count) <- paste0(sample, ":", sample.barcodes)
+
+    msg(info, "Starting emptyDrops")
+    e.out <- tryCatch(
+        emptyDrops(my.count),
+        error=function(e) {
+            warning("The matrix has been alrady pre-filtered.")
+            return(NA)  ## Return NA on error
+        })
+
+    if (class(e.out)!="DFrame")  {
+        true.cells <- colnames(my.count)
+    } else {
+        is.cell <- e.out$FDR <= 0.01
+        is.cell[is.na(is.cell)] <- FALSE
+        true.cells <- colnames(my.count)[is.cell]
+    }
+    msg(info, "Done.")
+    return(true.cells)
 }
 
 #' Retrieve gene symbols from Ensembl IDs
@@ -428,30 +614,33 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
     return(pre)
 }
 
-#' Process samples and merge into a single Seurat object
+#' Process samples, convert to Seurat objects and merge
 #'
-#' This function reads individual sample data from specified directories and file
-#' formats, creates Seurat objects for each sample, and merges them into a single
-#' Seurat object. The function supports both "mtx" and "h5" file formats.
+#' This function reads individual sample data from specified directories and
+#' file ormats, creates Seurat objects for each sample, and merges them into a
+#' single Seurat object. The function supports both "mtx" and "h5" file formats.
 #'
 #' @param meta Data.table containing metadata for each sample.
-#'             The metadata table must include the columns `sample`, `sample.dir`,
-#'             and potentially `Name` for h5 files. Each row should correspond to
-#'             a sample with its directory path where the data files are stored.
+#'             The metadata table must include the columns `sample`,
+#'             `sample.dir`, and potentially `file.type` for h5 files. Each row
+#'             should correspond to a sample with its directory path where the
+#'             data files are stored.
+#' @param output.dir Full system path to the directory where merged Seurat file
+#'        will be saved.
 #'
 #' @return A merged Seurat object containing data from all samples.
 #'
-#' @details The function processes each sample based on metadata entries. It checks
-#'          for the presence of either "mtx" or "h5" files in the directory specified
-#'          by `sample.dir`. Depending on the file type, it reads the data using
-#'          appropriate methods (`read10xCounts` for "mtx" and `Read10X_h5` for "h5").
-#'          Each dataset is converted into a Seurat object which are then merged into
-#'          one Seurat object. The function requires the Seurat, data.table, and
-#'          DropletUtils packages.
+#' @details The function processes each sample based on metadata entries. It
+#'          checks for the presence of either "mtx" or "h5" files in the
+#'          directory specified by `sample.dir`. Depending on the file type, it
+#'          reads the data using appropriate methods (`read10xCounts` for "mtx"
+#'          and `Read10X_h5` for "h5"). Each dataset is converted into a Seurat
+#'          object which are then merged into one Seurat object. The function
+#'          requires the Seurat, data.table, and DropletUtils packages.
 #'
 #'          It is assumed that all required libraries are installed and loaded.
-#'          Error handling includes checks for valid directory paths, correct sample
-#'          naming in metadata, and the presence of necessary data files.
+#'          Error handling includes checks for valid directory paths, correct
+#'          sample naming in metadata, and the presence of necessary data files.
 #'
 #' @examples
 #' \dontrun{
@@ -463,44 +652,38 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
 #' @importFrom Seurat CreateSeuratObject merge
 #' @importFrom DropletUtils read10xCounts
 #' @importFrom rhdf5 Read10X_h5
-process.samples.and.merge <- function(meta) {
+process.samples.and.merge <- function(meta, output.dir) {
     seurat.list <- list()
     all.samples <- meta[, unique(sample)]
 
-    ## Loop through each sample and create a Seurat object
+    ## Loop through samples and create Seurat objects
     for (this.sample in all.samples) {
         this.meta <- meta[sample == eval(this.sample)][1]
-        cat("Processing sample:", this.sample, "\n")
+        msg.txt <- sprintf("Processing sample: %s", this.sample)
+        msg(info, msg.txt)
 
-        if (this.meta[, .N] != 1) {
-            stop("Metadata should be a data.table with 1 row")
-        }
-
-        if (this.meta$sample != this.sample) {
-            stop("Sample name is not matched to metadata. Check input.")
-        }
-
-        this.sample.dir <- this.meta[, unique(sample.dir)]
+        this.sample.dir <- this.meta[, sample.dir]
         if (!dir.exists(this.sample.dir)) {
-            stop("Sample directory listed in metadata does not exist. Check input.")
+            msg.txt <- "Sample directory listed in metadata does not exist.
+            Check input."
+            stop(msg(error, msg.txt))
         }
 
-        ## Ramachandran et al have data for SingleCellExperiment consisting of
-        ## matrix.mtx, genes.tsv and barcodes.tsv.
-        ## It should be read using read10xCounts and then the sparse matrix of
-        ## counts should be extracted and passed to Seurat
-        ## Guilliams et al report data in h5 format. These files should be read
-        ## with Read10X_h5 function.
+        ## Studies may have sample data in mtx or h5 format which are to be
+        ## read by read10xCounts and Read10X_h5 respectively.
         ## Thus, we handle both cases here conditional on file types.
-        if (any(grepl("mtx", list.files(this.sample.dir)))) {
+        sample.files <- list.files(this.sample.dir)
+        if (any(grepl("mtx", sample.files))) {
             pre <- read10xCounts(this.sample.dir, col.names=TRUE)
             pre <- counts(pre)
-        } else if (any(grepl("h5", list.files(this.sample.dir)))) {
-            this.h5.file <- this.meta[, Name]
+        } else if (any(grepl("h5", sample.files))) {
+            this.h5.file <- sample.files[grep("*.h5", sample.files)]
             pre <- Read10X_h5(file.path(this.sample.dir, this.h5.file),
                               use.names=TRUE, unique.features=TRUE)
         } else {
-            stop("Either .mtx or .h5 file should be present. Check input directory.")
+            msg.txt <- "Either .mtx or .h5 file should be present.
+            Check input directory."
+            stop(msg(error, msg.txt))
         }
 
         seurat.list[[this.sample]] <- create.seurat(pre, this.sample,
@@ -520,9 +703,8 @@ process.samples.and.merge <- function(meta) {
     ## Merge <- AddClinicalData(Merge, clinical_data)
 
     ## Save the merged Seurat object
-    seurat.file <- file.path(unique(dirname(meta$sample.dir)),
-                             "merged.seurat.Rdata.gz")
-    save(Merge, file=seurat.file)
+    seurat.file <- file.path(output.dir, "merged.seurat.RDS")
+    saveRDS(Merge, file=seurat.file)
 
     ## Return the merged Seurat object
     return(Merge)
@@ -536,6 +718,7 @@ process.samples.and.merge <- function(meta) {
 #' visually assess the quality of the data after filtering.
 #'
 #' @param seurat.object `Seurat` object with single-cell RNA sequence data.
+#' @param all.samples Vectory of strings containing sample names.
 #' @param output.dir Full path to the directory where the diagnostic plot
 #'        will be saved.
 #' @param min.features Integer specifying minimum number of features (genes)
@@ -563,90 +746,67 @@ process.samples.and.merge <- function(meta) {
 #'                     min.features=300,
 #'                     output.dir="/path/to/output")
 #'
-#' @importFrom Seurat subset
-#' @import ggplot2
-#' @importFrom data.table as.data.table, setDT
-#' @importFrom stats median, mad
-qc.seurat <- function(seurat.object, output.dir,
+#' @require Seurat
+#' @require data.table
+#' @require ggplot2
+#' @require biomaRt
+qc.seurat <- function(seurat.object, all.samples, output.dir,
                       min.features=500, min.counts=1000, max.mt=10,
                       n.deviation=3, n.cells=30) {
     require(Seurat)
     require(data.table)
     require(ggplot2)
+    require(biomaRt)
 
-    ## Remove cells with transcripts/cell counts greater than 3 median absolute
-    ## deviation (MAD) away from the median
-    all.samples <- meta[, unique(sample)]
-
+    ## remove cells with outlier transcripts/cell counts
+    msg.txt <- "Removing cells with outlier transcripts/cell counts"
+    msg(info, msg.txt)
     cells.to.remove <- NULL
+
     for (this.sample in all.samples) {
-        meta.data <- setDT(seurat.object@meta.data)[sample==eval(this.sample)]
+        meta.data <- setDT(seurat.object@meta.data)[sample == eval(this.sample)]
 
         count.threshold <- median(meta.data$nCount_RNA) +
                            n.deviation * mad(meta.data$nCount_RNA)
         feature.threshold <- median(meta.data$nFeature_RNA) +
                              n.deviation * mad(meta.data$nFeature_RNA)
-        meta.data[, qc.fail := 0]
-        meta.data[nCount_RNA > count.threshold | nFeature_RNA > feature.threshold,
-                  qc.fail := 1]
+
+        meta.data[, qc.fail := (nCount_RNA > count.threshold |
+                                nFeature_RNA > feature.threshold)]
         to.remove <- meta.data[qc.fail==1, barcodes]
-        cat(length(to.remove),
-            "cells will be removed from sample", this.sample,
-            "due to feature/RNA count threshold.\n")
+
+        msg.txt <- sprintf("%s cells removed from %s due to thresholds",
+                           length(to.remove), this.sample)
+        msg(info, msg.txt)
         cells.to.remove <- c(cells.to.remove, to.remove)
     }
 
-    if (!all(cells.to.remove %in% colnames(seurat.object)))
-        stop("Cells barcodes were not matched to Seurat colnames.
-              Check barcode names.")
+    ## check cell barcodes against Seurat object
+    if (!all(cells.to.remove %in% colnames(seurat.object))) {
+        stop("Cells barcodes were not matched to Seurat colnames. Check barcode names.")
+    }
 
-    cells.to.keep <- colnames(seurat.object)[!colnames(seurat.object)
-                                             %in% cells.to.remove]
+    ## Update metadata, perform subsetting and filtering of genes
+    cells.to.keep <- setdiff(colnames(seurat.object), cells.to.remove)
+    msg(info, msg.txt)
 
-    df <- seurat.object@meta.data
-    df <- df[barcodes %in% cells.to.keep]
+    df <- seurat.object@meta.data[barcodes %in% cells.to.keep, ]
 
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by MAD\n")
+    ## sequential filtering of genes for various QC metrics
+    df <- df[df$nFeature_RNA > min.features & df$nCount_RNA > min.counts &
+             df$percent.mt < max.mt & df$doublet_prediction == 0, ]
 
-    ## Remove cells with N features < min.features
-    df <- df[nFeature_RNA>min.features]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by nFeature_RNA\n")
+    cells.to.keep <- df$barcodes
+    msg.txt <- sprintf("%s cells remain after all filtering steps",
+                       length(cells.to.keep))
+    msg(info, msg.txt)
 
-    ## Remove cells with N transcripts < min.counts (RNA counts)
-    df <- df[nCount_RNA>min.counts]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by nCount_RNA\n")
-
-    ## Remove cells with % MT genes > max.mt%
-    df <- df[percent.mt<max.mt]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after filtering by percent.mt\n")
-
-    ## Remove cells with doublet prediction > 0
-    df <- df[doublet_prediction==0]
-    cat(nrow(df), "of", ncol(seurat.object),
-        "cells remain after removing doublets\n")
-
-    ## perform subset and update metadata manually (this is a workaround for the
-    ## issue where subset function from Seurat package would not run properly)
-    cells.to.keep <- df$barcode
+    ## update Seurat object with filtered metadata
     seurat.object.filtered <- seurat.object[, cells.to.keep]
-    seurat.object.filtered@meta.data <- df[barcodes %in% cells.to.keep]
-
-    ## run some checks to ensure consistency between meta data and Seurat object
-    if (any(is.na(seurat.object.filtered@meta.data)))
-        stop("NAs detected in meta.data.")
-    if (!identical(colnames(seurat.object.filtered),
-        seurat.object.filtered@meta.data$barcode))
-        stop("Cell names in counts matrix do not match meta.data.")
-    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
-        stop("Cells labeled for removal detected in the filtered Seurat object.")
+    seurat.object.filtered@meta.data <- df
 
     ## plot the counts after filtering
-    dt <- setDT(seurat.object.filtered@meta.data)
-    p <- ggplot(dt, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
+    p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
         geom_point() +
         scale_colour_gradient(low="gray90", high="black") +
         stat_smooth(method=lm) +
@@ -654,21 +814,56 @@ qc.seurat <- function(seurat.object, output.dir,
         scale_y_log10() +
         labs(x="RNA counts, Log10", y="N transcripts, Log10")
     plot.file <- file.path(output.dir, "feature.plot.png")
-    ggsave(file=plot.file, p)
+    ggsave(plot.file, plot=p)
 
-    ## keep only genes which are expressed in n.cells or more cells
+    ## filer all genes which cannot be matched to Ensembl
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+
+    ## ensure all genes in the Seurat object are labelled by Ensembl IDs
+    genes <- rownames(seurat.object.filtered)
+    ensembl.ids <- genes[grep("^ENSG", genes)]
+    gene.symbols <- genes[!genes %in% ensembl.ids]
+    msg.txt <- sprintf("%s Ensembl ids and %s gene symbols found in Seurat object.",
+                       length(ensembl.ids), length(gene.symbols))
+    msg(info, msg.txt)
+    if (length(gene.symbols) != 0) {
+        msg(info, "Converting gene symbols to Ensembl ids.")
+        gene.symbols <- data.table(gene.id=NA, gene.symbol=gene.symbols)
+        matched.ids <- get.gene.ids(gene.symbols, ensembl)
+    }
+    all.ensembl.ids <- c(ensembl.ids, matched.ids$ensembl_gene_id)
+    msg.txt <- sprintf("%s genes with Ensembl ids will be retained.",
+                       length(all.ensembl.ids))
+    msg(info, msg.txt)
+    seurat.object.filtered <- seurat.object.filtered[all.ensembl.ids, ]
+
+    ## gene filtering based on cell presence
     gene.detection.rate <- PercentageFeatureSet(seurat.object.filtered,
                                                 pattern="^", assay="RNA")
     counts <- GetAssayData(object=seurat.object.filtered, slot="counts")
     nonzero.counts <- counts > 0
     keep.genes <- Matrix::rowSums(nonzero.counts) >= n.cells
-    cat(sum(keep.genes), "of", nrow(seurat.object.filtered),
-        "genes are expressed in more than", n.cells,
-        "cells and will be retained.\n")
+
+    msg.txt <- sprintf("Keep %s genes which are expressed in >%s cells.",
+                       sum(keep.genes), n.cells)
+    msg(info, msg.txt)
+
     seurat.object.filtered <- seurat.object.filtered[keep.genes, ]
-    seurat.object.filtered@meta.data <- setDF(dt)
-    save(seurat.object.filtered,
-         file=file.path(output.dir, "merged.filtered.seurat.Rdata.gz"))
+
+    ## subsetting sets all metadata to NA, so we need to update it
+    seurat.object.filtered@meta.data <- df
+
+    ## consistency checks
+    if (any(is.na(df))) {
+        stop("NAs detected in meta.data.")
+    }
+    if (!identical(colnames(seurat.object.filtered), df$barcode)) {
+        stop("Cell names in counts matrix do not match Seurat metadata.")
+    }
+
+    saveRDS(seurat.object.filtered,
+            file=file.path(output.dir, "filtered.seurat.RDS"))
+
     return(seurat.object.filtered)
 }
 
@@ -715,14 +910,14 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     seurat.object <- FindVariableFeatures(seurat.object, selection.method="vst",
                                           nfeatures=1000)
 
+    ## connect to Ensembl via BioMart
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+
     ## obtain top variable genes
     top.variable.genes <- head(VariableFeatures(seurat.object),
                                n.top.variable.genes)
     top.variable.genes <- data.table(gene.id=top.variable.genes,
                                      gene.symbol=top.variable.genes)
-
-    ## connect to Ensembl via BioMart
-    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
 
     ## map gene IDs to Ensembl, depending on the format
     if (any(grepl("ENSG", top.variable.genes))) {
@@ -737,8 +932,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
                            gene.id:=ensembl_gene_id]
     }
 
-    cat("Printing top", n.top.variable.genes,
-        "variable genes with Ensembl ids.\n")
+    msg.txt <- sprintf("Printing top %s variable genes with Ensembl ids",
+                       n.top.variable.genes)
+    msg(info, msg.txt)
     print(top.variable.genes)
 
     ## plot most variable genes on Expression-Variance plot
@@ -747,7 +943,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
 
     ## process core genes if specified
     if (!is.null(core.genes)) {
-        cat(length(core.genes), "genes of interest were provided.\n")
+        msg.txt <- sprintf("%s genes of interest were provided",
+                           length(core.genes))
+        msg(info, msg.txt)
         selected.genes <- data.table(gene.id=core.genes, gene.symbol=core.genes)
         ensembl.ids <- get.gene.ids(selected.genes, ensembl)
         selected.genes[ensembl.ids, on=c(gene.symbol="external_gene_name"),
@@ -756,8 +954,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
         all.hvg <- head(VariableFeatures(seurat.object), 1000)
         select.ids <- intersect(all.hvg, selected.genes$gene.id)
         selected.genes.matched <- selected.genes[gene.id %in% select.ids]
-        cat(nrow(selected.genes.matched), "of", nrow(selected.genes),
-            "genes matched in 1000 most highly variable genes.\n")
+        msg.txt <- sprintf("%s of %s genes matched in 1000 most highly variable genes:",
+                           n.top.variable.genes, n.top.variable.genes)
+        msg(info, msg.txt)
         print(selected.genes.matched)
 
         ## append labeled genes if specified
@@ -782,7 +981,7 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     return(seurat.object)
 }
 
-filter.seurat <- function(seurat.object, n.cells.keep=4000) {
+filter.seurat <- function(seurat.object, output.dir, n.cells.keep=4000) {
     ## randomly sample n.cells.keep cells
     cells.to.keep <- sample(colnames(seurat.object), size=n.cells.keep,
                             replace=FALSE)
@@ -800,12 +999,15 @@ filter.seurat <- function(seurat.object, n.cells.keep=4000) {
 
     ## run some checks to ensure consistency between meta data and Seurat object
     if (any(is.na(seurat.object.filtered@meta.data)))
-        stop("NAs detected in meta.data.")
+        stop(msg(error, "NAs detected in meta.data."))
     if (!identical(colnames(seurat.object.filtered),
         seurat.object.filtered@meta.data$barcode))
-        stop("Cell names in counts matrix do not match meta.data.")
+        stop(msg(error, "Cell names in counts matrix do not match meta.data."))
     if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
-        stop("Cells labeled for removal detected in the filtered Seurat object.")
+        stop(msg(error, "Cells labeled for removal detected in the filtered Seurat object."))
+
+    seurat.for.stator.file <- file.path(output.dir, "seurat.for.stator.RDS")
+    saveRDS(seurat.object.filtered, file=seurat.for.stator.file)
 
     return(seurat.object.filtered)
 }
