@@ -22,7 +22,7 @@
     "plotPairwiseUpsets": 0,
 
     "executor"    : "sge",
-    "maxQueueSize"  : 100,
+    "maxQueueSize"  : 50,
     "cores_makeData": 8,
     "cores_PC"      : 8,
     "cores_MCMC"    : 16,
@@ -46,10 +46,10 @@
     "time_makeData" : "1h",
     "time_PC"       : "48h",
     "time_MCMC"     : "96h",
-    "time_1pt"      : "240h",
-    "time_2pt"      : "240h",
-    "time_3pt"      : "240h",
-    "time_HOIs_MB"  : "240h",
-    "time_HOIs_6n7"  : "32h",
-    "time_HOIs_plots"  : "24h"
+    "time_1pt"      : "10h",
+    "time_2pt"      : "128h",
+    "time_3pt"      : "64h",
+    "time_HOIs_MB"  : "48h",
+    "time_HOIs_6n7"  : "48h",
+    "time_HOIs_plots"  : "48h"
   }

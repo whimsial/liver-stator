@@ -5,7 +5,7 @@
 ## load modules
 module add roslin/openjdk/13.0.1
 # module add igmm/bac/nextflow/24.04.2
-roslin/nextflow/22.10.7
+module load roslin/nextflow/22.10.7
 module load singularity
 
 ## pull development branch of Stator
