@@ -3,7 +3,7 @@
     "rawDataPath" : "/exports/igmm/eddie/khamseh-lab/aiakovliev/liver-stator/counts.csv",
     "userGenes"   : "/exports/igmm/eddie/khamseh-lab/aiakovliev/liver-stator/genes.csv",
     "nGenes"      : 1001,
-    "nCells"      : 4000,
+    "nCells"      : 20000,
     "clusterArray": 1,
     "fracMito"    : 0.1,
     "minGenes"    : 50,
