@@ -14,7 +14,7 @@ Depends on:
 R packages should be installed user R library (see [`properties.R`](https://github.com/whimsial/liver-stator/blob/main/properties.R) for details).
 
 
-- Python packages: `scanpy`, `scrublet` (for full list see [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) and [`requirements.txt](https://github.com/whimsial/liver-stator/blob/main/requirements.txt)).
+- Python packages: `scanpy`, `scrublet` (for full list see [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) and [`requirements.txt`](https://github.com/whimsial/liver-stator/blob/main/requirements.txt)).
 
 The Python code can (and probably should) also be run interactively using Jupyter notebook [`doublets.ipynb`](https://github.com/whimsial/liver-stator/blob/main/doublets.ipynb). It is useful to inspect distributions of doublets by eye to come up with a suitable threshold to be used in [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) (default is 0.15).
 
@@ -56,7 +56,7 @@ metadata including doublet predictions, mitochondrial RNA content, and produce Q
 
 We then proceed by merging the Seurat objects for all samples within specified studies to generate a single analysis-wide Seurat object.
 
-### Step 4: filter out cells/genes not passing QC flitters
+### Step 4: filter out cells/genes not passing QC
 
 In this step, we perform multiple quality control (QC) checks to filter cells
 in a Seurat object based on gene expression, mitochondrial content, and
@@ -66,7 +66,7 @@ visually assess the quality of the data after filtering.
 ### Step 5: process and visualize variable genes in a Seurat object
 
 Perform a series of operations on a Seurat object to identify
-and visualise highly variable genes. Normalise the data, identify variable
+and visualize highly variable genes. Normalize the data, identify variable
 features, map gene IDs to Ensembl, and plot these genes on mean expression vs variance plot. 
 
 In this step we also add and label core genes from GATE analysis and check if they appear as highly variable genes in single cell data.

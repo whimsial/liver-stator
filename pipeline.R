@@ -1,7 +1,12 @@
 ## High-resolution mapping of cell states in liver disease
 source("properties.R")
-source("helperfunctions.R")
 source("rnaseq.functions.R")
+
+#' Helper function to load a given Rdata object.
+load.rdata <- function(filename) {
+    load(filename)
+    get(ls()[ls() != "filename"])
+}
 
 ## Prepare study metadata table which we will use to provide URLs to download
 ## relevant files (raw metadata is located in liver_studies.tsv)
