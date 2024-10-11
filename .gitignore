@@ -1,3 +1,17 @@
+# Nextflow runtime files
+.nextflow/
+.nextflow.log*
+work/
+*.trace
+*.html
+*.timeline
+*.dag
+*.diagram
+
+# Result directories (assuming standard Nextflow output directories)
+5k_run/
+full_run/
+
 # History files
 .Rhistory
 .Rapp.history
@@ -16,7 +30,7 @@ venv/
 # Example code in package build process
 *-Ex.R
 
-# Output files from R CMD build
+# Output files from R CMD build and other output archives
 /*.tar.gz
 
 # Output files from R CMD check
@@ -63,8 +77,11 @@ rsconnect/
 !requirements.txt
 
 # Temporary or backup files
-*~
 .*.swp
+*.tmp
+*.temp
+*.swp
+*~
 
 # OS files
 .DS_Store
