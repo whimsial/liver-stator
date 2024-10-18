@@ -158,11 +158,14 @@ seurat.all.filtered <- qc.seurat(seurat.all,
 ## QC step 5: bring core genes to HVGs and prepare inputs for Stator
 ## -----------------------------------------------------------------------------
 ## load core genes for NAFLD
-core.eqtls <- load.rdata(file.path(root.dir, "nafld.diag.core.genes.eqtls.RData"))
-core.pqtls <- load.rdata(file.path(root.dir, "nafld.diag.core.genes.pqtls.RData"))
+core.eqtls <- load.rdata(file.path(root.dir,
+                                   "nafld.diag.core.genes.eqtls.RData"))
+core.pqtls <- load.rdata(file.path(root.dir,
+                                   "nafld.diag.core.genes.pqtls.RData"))
 
 core.genes <- c(core.eqtls[pvalue_trans<1E-6, gene_symbol],
-                core.pqtls[pvalue_trans<1E-6 & eff.numtransqtls>=5, gene_symbol])
+                core.pqtls[pvalue_trans<1E-6 & eff.numtransqtls>=5,
+                           gene_symbol])
 
 ## run QC step 5 to select most variable genes and prepare inputs for Stator
 label.genes <- c("ADIPOQ", "ADIPOR1", "ADIPOR2")
@@ -189,15 +192,102 @@ count <- t(count)
 
 ## write counts and selected genes to the file
 counts.file <- file.path(root.dir, "counts.csv")
-write.csv(count, file=counts.file, append=F, quote=F, row.names=T, col.names=T)
+write.csv(count, file=counts.file, append=FALSE, quote=FALSE,
+          row.names=TRUE, col.names=TRUE)
 genes.file <- file.path(root.dir, "genes.csv")
 write.table(t(hvg), file=genes.file, sep=",", quote=FALSE, col.names=FALSE,
             row.names=FALSE)
 
-## sopy counts and genes files to Eddie
+## copy counts and genes files to Eddie
 cmd <- sprintf("rsync -chavzP %s eddie:/exports/eddie/scratch/aiakvlie/",
                counts.file)
 system(cmd)
 cmd <- sprintf("rsync -chavzP %s eddie:/exports/eddie/scratch/aiakvlie/",
                genes.file)
 system(cmd)
+
+## Create and save cell annotation data for (Meta_data.csv) which maps cells
+## to disease states
+## -----------------------------------------------------------------------------
+## map samples to diagnoses
+meta.dt[sample %in% sample.map[sample.id %in% healthy, sample],
+        condition := "healthy"]
+meta.dt[grep("healthy", sample.file), condition := "healthy"]
+meta.dt[sample %in% sample.map[sample.id %in% steatosis, sample],
+        condition := "steatotic"]
+meta.dt[sample %in% sample.map[sample.id %in% fibrosis, sample],
+        condition := "fibrotic"]
+meta.dt[grep("cirrhotic", sample.file), condition := "cirrhotic"]
+
+## map cells to samples
+cell.map <- data.table(barcode=rownames(count))
+cell.map[, sample := gsub("(\\w+)_[A-Z]+.*", "\\1", barcode)]
+cell.map <- cell.map[unique(meta.dt, by="sample")[, .(sample, condition)],
+                     on="sample"]
+
+## map Ensembl gene ids to gene symbols
+ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+ensembl.ids <- data.table(gene.id=colnames(count))
+gene.symbols <- get.gene.symbols(ensembl.ids, ensembl)
+
+## classify cells into cell types using celltype expression map
+celltype.exp.file <- file.path(root.dir, "output", "celltypes_map.csv")
+celltype.exp.map <- fread(celltype.exp.file, select=c(1, 3:9),
+                          col.names=c("celltype", sprintf("gene%d", seq(7))))
+gene.symbols[celltype.exp.map, on=c(external_gene_name="gene1")]
+celltype.exp.map <- transpose(celltype.exp.map, make.names=1)
+
+count.long <- melt(as.data.table(count, keep.rownames=TRUE),
+                   measure.vars=names(count), id.vars="barcode",
+                   variable.name="gene.id", value.name="value")
+count.long <- count.long[value!=0]
+count.long[gene.symbols, on=c(gene.id="ensembl_gene_id"),
+           gene.symbol:=external_gene_name]
+
+label.celltype <- function(count.long, celltype.exp.map, label) {
+    markers <- celltype.exp.map[get(label)!="", get(label)]
+    cutoff <- ceiling(length(markers)/2)
+    re <- paste(markers, collapse="|")
+    count.long[grep(re, gene.symbol),
+               `:=`(candidate=eval(label),
+                    labels.expressed=paste(gene.symbol, collapse=","),
+                    n.expressed=.N), by="barcode"]
+    count.long[is.na(celltype) & !is.na(candidate) & n.expressed >= cutoff,
+               celltype := candidate]
+    return(count.long)
+}
+
+## label MPs
+count.long[, celltype := NA]
+count.long <- label.celltype(count.long, celltype.exp.map, label="MP")
+## label pDC
+count.long <- label.celltype(count.long, celltype.exp.map, label="pDC")
+## label ILC
+count.long <- label.celltype(count.long, celltype.exp.map, label="ILC")
+## label T cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="T cell")
+## label B cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="B cell")
+## label Plasma cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="Plasma cell")
+## label Mast cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="Mast cell")
+## label Endothelial cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="Endothelia")
+## label Mesenchyme cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="Mesenchyme")
+## label Hepatocytes cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="Hepatocyte")
+## label Cholangiocyte cells
+count.long <- label.celltype(count.long, celltype.exp.map,
+                             label="Cholangiocyte")
+## label Cycling cells
+count.long <- label.celltype(count.long, celltype.exp.map, label="Cycling")
+## label the rest as other
+
+count.long[, `:=`(candidate=NULL, n.expressed=NULL, labels.expressed=NULL)]
+
+## annotate cell ids in the counts matrix by the cell types
+cell.map[count.long[!is.na(celltype), .(barcode, celltype)], on="barcode",
+         celltype:=celltype]
+cell.map[is.na(celltype), celltype := "other"]
