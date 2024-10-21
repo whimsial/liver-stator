@@ -305,8 +305,9 @@ remove.emptydrops <- function(sce, sample, sample.barcodes) {
 #' This function takes a set of Ensembl gene IDs and uses the biomaRt package to
 #' retrieve the corresponding gene symbols from the specified Ensembl database.
 #'
-#' @param ensembl.ids Data.table or data.frame containing the Ensembl gene IDs
-#'        in a column named `gene.id`.
+#' @param ensembl.ids Data.table, data.frame or character vector containing the
+#'        Ensembl gene IDs. If data.table or data.drame then Ensembl ids should
+#'        be provided in a column named `gene.id`.
 #' @param ensembl BioMart database object representing the Ensembl database;
 #'        typically this is created using the `useMart` function from the
 #'        biomaRt package.
@@ -318,9 +319,9 @@ remove.emptydrops <- function(sce, sample, sample.barcodes) {
 #'   }
 #'   The function also prints the number of matched and total queried gene IDs.
 #'
-#' @details The function requires the biomaRt package and expects that the ensembl
-#'          object passed to it has been properly initialized with the useMart
-#'          function. It uses the `getBM` function to perform the query.
+#' @details The function requires the biomaRt package and expects that the
+#'          ensembl object passed to it has been properly initialized with the
+#'          useMart function. It uses the `getBM` function to perform the query.
 #'
 #' @examples
 #' \dontrun{
@@ -335,10 +336,16 @@ remove.emptydrops <- function(sce, sample, sample.barcodes) {
 #' @importFrom biomaRt getBM
 #' @importFrom data.table setDT
 get.gene.symbols <- function(ensembl.ids, ensembl) {
+    if ("data.table" %in% class(ensembl.ids)) {
+        values <- ensembl.ids$gene.id
+    } else {
+        values <- ensembl.ids
+    }
+
     gene.symbols <- setDT(getBM(attributes=c("ensembl_gene_id",
                                              "external_gene_name"),
                                 filters="ensembl_gene_id",
-                                values=ensembl.ids$gene.id,
+                                values=values,
                                 mart=ensembl))
     cat(nrow(gene.symbols), "of", nrow(ensembl.ids),
         "genes matched to Ensembl by ID.\n")
@@ -544,6 +551,9 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
     pre$sample <- this.sample
     pre$orig.ident <- this.sample
 
+    ## update Seurat meta.data
+    pre <- update.seurat.meta.data(pre)
+
     ## read Dublet predictions and scores
     prediction.file <- file.path(this.sample.dir,
                                  "scrublet_EDR0.008_PredictedDoublets.csv")
@@ -560,15 +570,9 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
                           score=doublet_score$V1)
     dublets[, new.prediction := ifelse(score>dublet.threshold, 1, 0)]
 
-    ## append info on duplets and mitochondrial RNA to Seurat metadata object
+    ## append info on duplets to Seurat meta.data
     pre[["doublet_prediction"]] <- dublets[, new.prediction]
     pre[["doublet_score"]] <- dublets[, score]
-    pre <- count.mt.genes(pre)
-
-    ## compute log10 of the proportion of identified genes to counts of all
-    ## RNA molecules in each cell to identify anomalies in gene expression due
-    ## to mitochondrial or ribosomal RNA.
-    pre$log10GenesPerUMI <- log10(pre$nFeature_RNA) / log10(pre$nCount_RNA)
 
     ## plot numbers of genes, RNA counts, MT RNAs and ratio of counts of genes
     ## to RNAs
@@ -698,6 +702,9 @@ process.samples.and.merge <- function(meta, output.dir) {
         Merge <- seurat.list[[1]]
     }
 
+    ## update and check the meta.data of the merged Seurat object
+    Merge <- update.seurat.meta.data(Merge)
+
     ## Optional: Add clinical metadata for samples (if any)
     ## Assuming clinical metadata needs to be merged
     ## Merge <- AddClinicalData(Merge, clinical_data)
@@ -708,6 +715,50 @@ process.samples.and.merge <- function(meta, output.dir) {
 
     ## Return the merged Seurat object
     return(Merge)
+}
+
+#' Update metadata in a Seurat Object
+#'
+#' This function recalculates metadata for a Seurat object, specifically
+#' updating `nCount_RNA`, `nFeature_RNA`, and computing the log10 ratio of
+#' features to total counts. It also identifies cells with zero counts and adds
+#' mitochondrial content to the metadata.
+#'
+#' @param seurat.obj Seurat object with single-cell RNA sequence data.
+#'
+#' @return Seurat object with updated metadata.
+#'
+#' @importFrom Matrix colSums
+update.seurat.meta.data <- function(seurat.obj) {
+    ## recompute nCount_RNA and nFeature_RNA
+    n.counts <- Matrix::colSums(seurat.obj[["RNA"]]@counts)
+    if (any(any(n.counts==0))) {
+        msg.txt <- sprintf("%s cells with 0 counts detcted. Printing first 20.",
+                           sum(n.counts==0))
+        msg(warn, msg.txt)
+        print(names(n.counts[n.counts==0])[1:20])
+    }
+    seurat.obj@meta.data$nCount_RNA <- n.counts
+
+    n.features <- Matrix::colSums(seurat.obj[["RNA"]]@counts > 0)
+    if (any(any(n.features==0))) {
+        msg.txt <- sprintf("%s cells with 0 counts detcted. Printing first 20.",
+                           sum(n.features==0))
+        msg(warn, msg.txt)
+        print(names(n.features[n.features==0])[1:20])
+    }
+    seurat.obj@meta.data$nFeature_RNA <- n.features
+
+    ## append mitochondrial RNA to Seurat meta.data object
+    seurat.obj <- count.mt.genes(seurat.obj)
+
+    ## compute log10 of the proportion of identified genes to counts of all
+    ## RNA molecules in each cell to identify anomalies in gene expression due
+    ## to mitochondrial or ribosomal RNA.
+    seurat.obj@meta.data$log10GenesPerUMI <-
+        log10(seurat.obj@meta.data$nFeature_RNA) /
+        log10(seurat.obj@meta.data$nCount_RNA)
+    return(seurat.obj)
 }
 
 #' Filter Cells in a Seurat Object
@@ -805,6 +856,9 @@ qc.seurat <- function(seurat.object, all.samples, output.dir,
     seurat.object.filtered <- seurat.object[, cells.to.keep]
     seurat.object.filtered@meta.data <- df
 
+    ## recompute the meta.data after subsetting
+    seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
+
     ## plot the counts after filtering
     p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
         geom_point() +
@@ -860,6 +914,9 @@ qc.seurat <- function(seurat.object, all.samples, output.dir,
     if (!identical(colnames(seurat.object.filtered), df$barcode)) {
         stop("Cell names in counts matrix do not match Seurat metadata.")
     }
+
+    ## check the meta.data after the all subsets
+    seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
 
     saveRDS(seurat.object.filtered,
             file=file.path(output.dir, "filtered.seurat.RDS"))

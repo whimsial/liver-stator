@@ -112,13 +112,13 @@ fwrite(meta.dt, file=meta.file, sep="\t")
 ## QC steps 1 and 2: detection of empty drops and detection of doublets
 ## -----------------------------------------------------------------------------
 msg(bold, "Extracting sample files into subdirectories")
-msg.txt <- sprintf("Extracting sample %s", this.sample)
-msg(info, msg.txt)
 
 all.10x.data <- list()
 cells <- NULL
 for (idx in seq_len(nrow(meta.dt))) {
     this.sample <- meta.dt[idx, sample]
+    msg.txt <- sprintf("Extracting sample %s", this.sample)
+    msg(info, msg.txt)
     this.sample.dir <- meta.dt[sample==eval(this.sample), unique(sample.dir)]
     this.archives <- meta.dt[sample==eval(this.sample),
                              file.path(unique(study.dir), sample.file)]
@@ -186,7 +186,7 @@ seurat.for.stator <- filter.seurat(seurat.all.filtered.hvg, output.dir=root.dir,
                                    n.cells.keep=20000)
 
 ## extract sparse count matrix, convert to dense matrix
-count <- seurat.for.stator[["RNA"]]@data
+count <- seurat.for.stator[["RNA"]]@counts
 count <- as.matrix(count)
 count <- t(count)
 
@@ -257,37 +257,77 @@ label.celltype <- function(count.long, celltype.exp.map, label) {
     return(count.long)
 }
 
-## label MPs
+cell.labels <- c("MP", "pDC", "ILC", "T cell", "B cell", "Plasma cell",
+                 "Mast cell", "Endothelia", "Mesenchyme", "Hepatocyte",
+                 "Cholangiocyte", "Cycling")
 count.long[, celltype := NA]
-count.long <- label.celltype(count.long, celltype.exp.map, label="MP")
-## label pDC
-count.long <- label.celltype(count.long, celltype.exp.map, label="pDC")
-## label ILC
-count.long <- label.celltype(count.long, celltype.exp.map, label="ILC")
-## label T cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="T cell")
-## label B cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="B cell")
-## label Plasma cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="Plasma cell")
-## label Mast cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="Mast cell")
-## label Endothelial cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="Endothelia")
-## label Mesenchyme cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="Mesenchyme")
-## label Hepatocytes cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="Hepatocyte")
-## label Cholangiocyte cells
-count.long <- label.celltype(count.long, celltype.exp.map,
-                             label="Cholangiocyte")
-## label Cycling cells
-count.long <- label.celltype(count.long, celltype.exp.map, label="Cycling")
-## label the rest as other
-
+for (this.label in cell.labels) {
+    count.long <- label.celltype(count.long, celltype.exp.map, label=this.label)
+}
 count.long[, `:=`(candidate=NULL, n.expressed=NULL, labels.expressed=NULL)]
 
-## annotate cell ids in the counts matrix by the cell types
+## annotate cell ids in the counts matrix by the inferred cell types
 cell.map[count.long[!is.na(celltype), .(barcode, celltype)], on="barcode",
          celltype:=celltype]
 cell.map[is.na(celltype), celltype := "other"]
+
+## remove count.long and cleanup memory
+rm(count.long)
+gc()
+
+## write Meta_Data.csv file with cell annotation which will be used by Stator
+## Shiny app
+fwrite(cell.map[, .(barcode, condition, celltype)],
+       file=file.path(root.dir, "output", "full_run", "Meta_Data.csv"),
+       quote=TRUE)
+
+## Replace Ensembl IDs in Stator output with gene symbols
+## -----------------------------------------------------------------------------
+## replace gene ids in counts matrix
+ensembl.ids[gene.symbols, on=c(gene.id="ensembl_gene_id"),
+            gene.symbol := external_gene_name]
+ensembl.ids[gene.symbol=="" | is.na(gene.symbol), gene.symbol := gene.id]
+colnames(count) <- ensembl.ids[, gene.symbol]
+
+counts.file <- file.path(root.dir, "output", "full_run", "counts.csv")
+write.csv(count, file=counts.file, append=FALSE, quote=FALSE,
+          row.names=TRUE, col.names=TRUE)
+
+## replace gene ids in all d-tuples
+dtuples.file <- file.path(root.dir, "output", "full_run", "dtuples_output",
+                          "all_DTuples.csv")
+dtuples <- fread(dtuples.file)
+
+find.gene.symbols.dt <- function(ids, lookup.table) {
+    id.list <- unlist(strsplit(ids, "_"))
+    symbols <- sapply(id.list, function(id) {
+        symbol <- lookup.table[gene.id==id, gene.symbol]
+        if (length(symbol) == 0) return(NA)
+        return(unname(symbol))
+    })
+    paste(symbols, collapse = "_")
+}
+
+dtuples[, genes := sapply(genes, find.gene.symbols.dt, ensembl.ids)]
+fwrite(dtuples, file=dtuples.file)
+
+## replace gene ids in training data
+training.data.file <- file.path(root.dir, "output", "full_run", "output",
+                                "trainingData_20000Cells_1001Genes.csv")
+training.data <- fread(training.data.file)
+
+training.data.ids <- data.table(gene.id=names(training.data))
+training.data.ids[ensembl.ids, on="gene.id", gene.symbol := gene.symbol]
+names(training.data) <- training.data.ids[, gene.symbol]
+fwrite(training.data, file=training.data.file)
+
+## replace gene ids in MCMC graph
+mcmc.graph.file <- file.path(root.dir, "output", "full_run", "output",
+                            "MCMCgraph_20000Cells_1001Genes.csv")
+mcmc.graph <- fread(mcmc.graph.file)
+
+mcmc.graph.ids <- data.table(gene.id=names(mcmc.graph))
+mcmc.graph.ids[ensembl.ids, on="gene.id", gene.symbol := gene.symbol]
+mcmc.graph.ids[is.na(gene.symbol), gene.symbol := gene.id]
+names(mcmc.graph) <- mcmc.graph.ids[, gene.symbol]
+fwrite(mcmc.graph, file=mcmc.graph.file)
