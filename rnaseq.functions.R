@@ -400,16 +400,40 @@ get.gene.ids <- function(gene.symbols, ensembl) {
     return(ensembl.ids)
 }
 
+#' Helper function to map genes to Ensembl by gene id or gene symbol
+map.ensembl <- function(genes.dt, ensembl) {
+     ## map gene IDs to Ensembl, depending on the format
+    ensembl.ids <- genes.dt[grep("ENSG", gene.id)]
+    if (nrow(ensembl.ids)>0) {
+        mapped.ids <- get.gene.symbols(ensembl.ids, ensembl)
+    } else {
+        mapped.ids <- data.table()
+    }
+    gene.symbols <- genes.dt[grep("ENSG", gene.id, invert=TRUE)]
+    if (nrow(gene.symbols)>0) {
+        mapped.symbol <- get.gene.ids(gene.symbols, ensembl)
+    } else {
+        mapped.symbol <- data.table()
+    }
+
+    mapped.genes <- rbind(mapped.ids, mapped.symbol)
+    genes.dt[mapped.genes, on=c(gene.id="ensembl_gene_id"),
+             gene.symbol:=external_gene_name]
+    genes.dt[mapped.genes, on=c(gene.symbol="external_gene_name"),
+             gene.id:=ensembl_gene_id]
+    return(genes.dt)
+}
+
 #' Plot variable genes from Seurat object
 #'
 #' Visualizes variable genes on a scatter plot using data from a Seurat object.
 #' This function highlights specific genes and saves the plot to a file.
 #'
-#' @param seurat.object A Seurat object containing variable gene data and expression
-#'        metrics calculated, typically with functions such as `FindVariableFeatures`.
-#' @param genes.dt Data.table or data.frame containing the gene identifiers
-#'        and symbols to be highlighted; must include columns `gene.id`
-#'        for gene identifiers and `gene.symbol` for gene names.
+#' @param seurat.object A Seurat object containing variable gene data and
+#'        expression metrics calculated, typically with functions such as
+#'        `FindVariableFeatures`.
+#' @param points Character vector with data points to label.
+#' @param labels Character vector with labels.
 #' @param output.file Full path to the file where the plot should be saved.
 #'        Supports any file format compatible with `ggsave`,
 #'        including but not limited to png, pdf, and jpeg formats.
@@ -436,10 +460,10 @@ get.gene.ids <- function(gene.symbols, ensembl) {
 #'
 #' @importFrom Seurat VariableFeaturePlot LabelPoints
 #' @importFrom ggplot2 ggsave scale_y_log10 labs theme_minimal
-plot.variable.genes <- function(seurat.object, genes.dt, output.file) {
+plot.variable.genes <- function(seurat.object, points, labels, output.file) {
     p <- VariableFeaturePlot(seurat.object, pt.size=0.2)
-    p2 <- LabelPoints(plot=p, points=genes.dt$gene.id,
-                      labels=genes.dt$gene.symbol, repel=TRUE,
+    p2 <- LabelPoints(plot=p, points=points,
+                      labels=labels, repel=TRUE,
                       xnudge=0, ynudge=0, max.overlaps=Inf, force=7,
                       colour="blue")
     p2 <- p2 + scale_y_log10() + labs(x="Average Expression",
@@ -732,8 +756,8 @@ process.samples.and.merge <- function(meta, output.dir) {
 update.seurat.meta.data <- function(seurat.obj) {
     ## recompute nCount_RNA and nFeature_RNA
     n.counts <- Matrix::colSums(seurat.obj[["RNA"]]@counts)
-    if (any(any(n.counts==0))) {
-        msg.txt <- sprintf("%s cells with 0 counts detcted. Printing first 20.",
+    if (any(n.counts==0)) {
+        msg.txt <- sprintf("%s cells with 0 counts detcted. First 20 are:",
                            sum(n.counts==0))
         msg(warn, msg.txt)
         print(names(n.counts[n.counts==0])[1:20])
@@ -741,8 +765,8 @@ update.seurat.meta.data <- function(seurat.obj) {
     seurat.obj@meta.data$nCount_RNA <- n.counts
 
     n.features <- Matrix::colSums(seurat.obj[["RNA"]]@counts > 0)
-    if (any(any(n.features==0))) {
-        msg.txt <- sprintf("%s cells with 0 counts detcted. Printing first 20.",
+    if (any(n.features==0)) {
+        msg.txt <- sprintf("%s cells with 0 features detcted. First 20 are:",
                            sum(n.features==0))
         msg(warn, msg.txt)
         print(names(n.features[n.features==0])[1:20])
@@ -761,15 +785,15 @@ update.seurat.meta.data <- function(seurat.obj) {
     return(seurat.obj)
 }
 
-#' Filter Cells in a Seurat Object
+#' Filter cells and genes in a Seurat Object
 #'
 #' This function performs multiple quality control (QC) checks to filter cells
 #' in a Seurat object based on gene expression, mitochondrial content, and
-#' other metadata-based criteria. It also generates a diagnostic plot to
-#' visually assess the quality of the data after filtering.
+#' other metadata-based criteria. It also filteres out genes expressed in small
+#' numbers of cells and generates a diagnostic plot to visually assess the
+#' quality of the data after filtering.
 #'
-#' @param seurat.object `Seurat` object with single-cell RNA sequence data.
-#' @param all.samples Vectory of strings containing sample names.
+#' @param seurat.object Seurat object with single-cell RNA sequence data.
 #' @param output.dir Full path to the directory where the diagnostic plot
 #'        will be saved.
 #' @param min.features Integer specifying minimum number of features (genes)
@@ -786,22 +810,22 @@ update.seurat.meta.data <- function(seurat.obj) {
 #'        must be detected to be retained. This helps filter out
 #'        rarely expressed genes. Default is 30.
 #'
-#' @return A filtered `Seurat` object with cells and genes that pass filtering.
+#' @return A filtered Seurat object with cells and genes that pass filtering.
 #'
 #' @examples
 #' # Filter with default parameters
-#' seurat <- qc.seurat(my.seurat.object)
+#' seurat <- qc.seurat(my.seurat.object, output.dir=getwd())
 #'
 #' # Filter with custom parameters
 #' seurat <- qc.seurat(my.seurat.object,
-#'                     min.features=300,
-#'                     output.dir="/path/to/output")
+#'                     output.dir=getwd(),
+#'                     min.features=300)
 #'
 #' @require Seurat
 #' @require data.table
 #' @require ggplot2
 #' @require biomaRt
-qc.seurat <- function(seurat.object, all.samples, output.dir,
+qc.seurat <- function(seurat.object, output.dir,
                       min.features=500, min.counts=1000, max.mt=10,
                       n.deviation=3, n.cells=30) {
     require(Seurat)
@@ -809,119 +833,83 @@ qc.seurat <- function(seurat.object, all.samples, output.dir,
     require(ggplot2)
     require(biomaRt)
 
-    ## remove cells with outlier transcripts/cell counts
     msg.txt <- "Removing cells with outlier transcripts/cell counts"
     msg(info, msg.txt)
-    cells.to.remove <- NULL
 
-    for (this.sample in all.samples) {
-        meta.data <- setDT(seurat.object@meta.data)[sample == eval(this.sample)]
+    ## ensure the meta.data is up-to-date
+    seurat.object <- update.seurat.meta.data(seurat.object)
 
-        count.threshold <- median(meta.data$nCount_RNA) +
-                           n.deviation * mad(meta.data$nCount_RNA)
-        feature.threshold <- median(meta.data$nFeature_RNA) +
-                             n.deviation * mad(meta.data$nFeature_RNA)
-
-        meta.data[, qc.fail := (nCount_RNA > count.threshold |
-                                nFeature_RNA > feature.threshold)]
-        to.remove <- meta.data[qc.fail==1, barcodes]
-
-        msg.txt <- sprintf("%s cells removed from %s due to thresholds",
-                           length(to.remove), this.sample)
-        msg(info, msg.txt)
-        cells.to.remove <- c(cells.to.remove, to.remove)
-    }
-
+    meta.data <- setDT(seurat.object@meta.data)
     ## check cell barcodes against Seurat object
-    if (!all(cells.to.remove %in% colnames(seurat.object))) {
-        stop("Cells barcodes were not matched to Seurat colnames. Check barcode names.")
+    if (!all(meta.data$barcodes %in% colnames(seurat.object))) {
+        stop("Cells were not matched to Seurat object. Check barcodes.")
     }
 
-    ## Update metadata, perform subsetting and filtering of genes
-    cells.to.keep <- setdiff(colnames(seurat.object), cells.to.remove)
+    ## infer cells with outlier transcripts/cell counts
+    meta.data[, count.threshold :=
+                median(nCount_RNA) + n.deviation * mad(nCount_RNA), by="sample"]
+    meta.data[, feature.threshold :=
+                median(nFeature_RNA) + n.deviation * mad(nFeature_RNA),
+              by="sample"]
+    qc.expr <- quote(nCount_RNA > count.threshold |
+                     nFeature_RNA > feature.threshold)
+    meta.data[, qc.fail := eval(qc.expr)]
+    msg.txt <- sprintf("Remove %s cells in %s samples -- outlier transcripts.",
+                        meta.data[qc.fail==TRUE, .N],
+                        meta.data[qc.fail==TRUE, uniqueN(sample)])
+    msg(info, msg.txt)
+    meta.data[, `:=`(count.threshold=NULL, feature.threshold=NULL)]
+
+    ## infer which cells fail user specified QC
+    qc.expr <- quote(nFeature_RNA < min.features & nCount_RNA < min.counts &
+                     percent.mt > max.mt & doublet_prediction != 0)
+    meta.data[eval(qc.expr), qc.fail := TRUE]
+
+    msg.txt <- sprintf("Remove %s cells in %s samples -- fail supplied QC.",
+                       meta.data[eval(qc.expr), .N],
+                       meta.data[eval(qc.expr), uniqueN(sample)])
     msg(info, msg.txt)
 
-    df <- seurat.object@meta.data[barcodes %in% cells.to.keep, ]
-
-    ## sequential filtering of genes for various QC metrics
-    df <- df[df$nFeature_RNA > min.features & df$nCount_RNA > min.counts &
-             df$percent.mt < max.mt & df$doublet_prediction == 0, ]
-
-    cells.to.keep <- df$barcodes
-    msg.txt <- sprintf("%s cells remain after all filtering steps",
+    cells.to.keep <- meta.data[qc.fail==FALSE, barcodes]
+    msg.txt <- sprintf("Keep %s cells after all filtering steps",
                        length(cells.to.keep))
     msg(info, msg.txt)
 
-    ## update Seurat object with filtered metadata
-    seurat.object.filtered <- seurat.object[, cells.to.keep]
-    seurat.object.filtered@meta.data <- df
-
-    ## recompute the meta.data after subsetting
-    seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
-
-    ## plot the counts after filtering
-    p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
-        geom_point() +
-        scale_colour_gradient(low="gray90", high="black") +
-        stat_smooth(method=lm) +
-        scale_x_log10() +
-        scale_y_log10() +
-        labs(x="RNA counts, Log10", y="N transcripts, Log10")
-    plot.file <- file.path(output.dir, "feature.plot.png")
-    ggsave(plot.file, plot=p)
-
-    ## filer all genes which cannot be matched to Ensembl
-    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-
-    ## ensure all genes in the Seurat object are labelled by Ensembl IDs
-    genes <- rownames(seurat.object.filtered)
-    ensembl.ids <- genes[grep("^ENSG", genes)]
-    gene.symbols <- genes[!genes %in% ensembl.ids]
-    msg.txt <- sprintf("%s Ensembl ids and %s gene symbols found in Seurat object.",
-                       length(ensembl.ids), length(gene.symbols))
-    msg(info, msg.txt)
-    if (length(gene.symbols) != 0) {
-        msg(info, "Converting gene symbols to Ensembl ids.")
-        gene.symbols <- data.table(gene.id=NA, gene.symbol=gene.symbols)
-        matched.ids <- get.gene.ids(gene.symbols, ensembl)
-    }
-    all.ensembl.ids <- c(ensembl.ids, matched.ids$ensembl_gene_id)
-    msg.txt <- sprintf("%s genes with Ensembl ids will be retained.",
-                       length(all.ensembl.ids))
-    msg(info, msg.txt)
-    seurat.object.filtered <- seurat.object.filtered[all.ensembl.ids, ]
-
-    ## gene filtering based on cell presence
-    gene.detection.rate <- PercentageFeatureSet(seurat.object.filtered,
-                                                pattern="^", assay="RNA")
-    counts <- GetAssayData(object=seurat.object.filtered, slot="counts")
+    ## filter genes based on how many cells are they expressed in
+    counts <- GetAssayData(object=seurat.object, slot="counts")
     nonzero.counts <- counts > 0
-    keep.genes <- Matrix::rowSums(nonzero.counts) >= n.cells
+    genes.expressed <- Matrix::rowSums(nonzero.counts) >= n.cells
+    genes.to.keep <- names(genes.expressed[genes.expressed])
 
     msg.txt <- sprintf("Keep %s genes which are expressed in >%s cells.",
-                       sum(keep.genes), n.cells)
+                       length(genes.to.keep), n.cells)
     msg(info, msg.txt)
 
-    seurat.object.filtered <- seurat.object.filtered[keep.genes, ]
-
-    ## subsetting sets all metadata to NA, so we need to update it
-    seurat.object.filtered@meta.data <- df
+    ## subset Seurat objects and check its correctness
+    seurat.object.subset <- seurat.object[genes.to.keep, cells.to.keep]
+    df <- as.data.frame(meta.data[qc.fail==FALSE])
 
     ## consistency checks
     if (any(is.na(df))) {
         stop("NAs detected in meta.data.")
     }
-    if (!identical(colnames(seurat.object.filtered), df$barcode)) {
+    if (!identical(colnames(seurat.object.subset), df$barcode)) {
         stop("Cell names in counts matrix do not match Seurat metadata.")
     }
 
-    ## check the meta.data after the all subsets
-    seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
+    seurat.object.subset@meta.data <- df
 
-    saveRDS(seurat.object.filtered,
+    ## check the meta.data after subsetting in case we introduce cells with
+    ## 0 counts or 0 features
+    seurat.object.subset <- update.seurat.meta.data(seurat.object.subset)
+
+    ## plot the counts after filtering
+    plot.features(df, output.dir)
+
+    saveRDS(seurat.object.subset,
             file=file.path(output.dir, "filtered.seurat.RDS"))
 
-    return(seurat.object.filtered)
+    return(seurat.object.subset)
 }
 
 #' Process and visualise variable genes in a Seurat object
@@ -971,68 +959,80 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
 
     ## obtain top variable genes
+    msg.txt <- sprintf("Selected %s most variable genes", n.top.variable.genes)
+    msg(info, msg.txt)
+
     top.variable.genes <- head(VariableFeatures(seurat.object),
                                n.top.variable.genes)
     top.variable.genes <- data.table(gene.id=top.variable.genes,
                                      gene.symbol=top.variable.genes)
 
     ## map gene IDs to Ensembl, depending on the format
-    if (any(grepl("ENSG", top.variable.genes))) {
-        ensembl.ids <- top.variable.genes[grep("ENSG", gene.id)]
-        gene.symbols <- get.gene.symbols(ensembl.ids, ensembl)
-        top.variable.genes[gene.symbols, on=c(gene.id="ensembl_gene_id"),
-                           gene.symbol:=external_gene_name]
-    } else {
-        gene.symbols <- top.variable.genes[, gene.symbol]
-        ensembl.ids <- get.gene.ids(gene.symbols, ensembl)
-        top.variable.genes[ensembl.ids, on=c(gene.symbol="external_gene_name"),
-                           gene.id:=ensembl_gene_id]
-    }
+    top.variable.genes <- map.ensembl(top.variable.genes, ensembl)
+    ensembl.ids <- top.variable.genes[grep("ENSG", gene.id)]
 
-    msg.txt <- sprintf("Printing top %s variable genes with Ensembl ids",
+    msg.txt <- sprintf("%s most variable genes mapped to Ensembl",
                        n.top.variable.genes)
     msg(info, msg.txt)
     print(top.variable.genes)
 
-    ## plot most variable genes on Expression-Variance plot
+    msg.txt <- "Plot most variable genes on Expression-Variance plot"
+    msg(info, msg.txt)
     output.file <- file.path(output.dir, "most.variable.genes.png")
-    plot.variable.genes(seurat.object, genes.dt=top.variable.genes, output.file)
+    plot.variable.genes(seurat.object, points=top.variable.genes$gene.id,
+                        labels=top.variable.genes$gene.symbol, output.file)
 
     ## process core genes if specified
     if (!is.null(core.genes)) {
-        msg.txt <- sprintf("%s genes of interest were provided",
+        msg.txt <- sprintf("%s genes of interest were specified",
                            length(core.genes))
         msg(info, msg.txt)
         selected.genes <- data.table(gene.id=core.genes, gene.symbol=core.genes)
-        ensembl.ids <- get.gene.ids(selected.genes, ensembl)
-        selected.genes[ensembl.ids, on=c(gene.symbol="external_gene_name"),
-                       gene.id:=ensembl_gene_id]
+        selected.genes <- map.ensembl(selected.genes, ensembl)
 
-        all.hvg <- head(VariableFeatures(seurat.object), 1000)
-        select.ids <- intersect(all.hvg, selected.genes$gene.id)
-        selected.genes.matched <- selected.genes[gene.id %in% select.ids]
-        msg.txt <- sprintf("%s of %s genes matched in 1000 most highly variable genes:",
-                           n.top.variable.genes, n.top.variable.genes)
-        msg(info, msg.txt)
-        print(selected.genes.matched)
-
+        selected.genes[, `:=`(matched.id=FALSE, matched.symbol=FALSE)]
+        selected.genes[gene.id %in% rownames(seurat.object), matched.id := TRUE]
+        selected.genes[gene.symbol %in% rownames(seurat.object),
+                       matched.symbol := TRUE]
         ## append labeled genes if specified
         if (!is.null(label.genes)) {
+            msg.txt <- sprintf("%s additional genes to label",
+                               length(label.genes))
+            msg(info, msg.txt)
             label.genes.dt <- data.table(gene.id=label.genes,
                                          gene.symbol=label.genes)
-            ensembl.ids <- get.gene.ids(label.genes.dt, ensembl)
-            label.genes.dt[ensembl.ids, on=c(gene.symbol="external_gene_name"),
-                           gene.id:=ensembl_gene_id]
-            matched1 <- label.genes.dt[gene.id %in% rownames(seurat.object)]
-            matched2 <- label.genes.dt[gene.symbol %in% rownames(seurat.object)]
-            label.genes.dt <- rbind(matched1, matched2)
-            selected.genes.matched <- rbind(selected.genes.matched, label.genes.dt)
+            label.genes.dt <- map.ensembl(label.genes.dt, ensembl)
+            label.genes.dt[, `:=`(matched.id=FALSE, matched.symbol=FALSE)]
+            label.genes.dt[gene.id %in% rownames(seurat.object),
+                           matched.id := TRUE]
+            label.genes.dt[gene.symbol %in% rownames(seurat.object),
+                           matched.symbol := TRUE]
+            selected.genes <- rbind(selected.genes, label.genes.dt)
         }
 
         ## plot core genes and labelled genes
-        selected.genes.matched <- unique(selected.genes.matched)
+        selected.genes <- unique(selected.genes, by=c("gene.id", "gene.symbol"))
+        selected.genes[matched.id==TRUE, points := gene.id]
+        selected.genes[matched.id==FALSE & matched.symbol==TRUE,
+                       points := gene.symbol]
+
+        msg.txt <- "Map HVGs to Ensembl"
+        msg(info, msg.txt)
+        all.hvg <- head(VariableFeatures(seurat.object), 1000)
+        all.hvg <- data.table(gene.id=all.hvg, gene.symbol=all.hvg)
+        all.hvg <- map.ensembl(all.hvg, ensembl)
+
+        selected.genes[, match.hvg := FALSE]
+        selected.genes[all.hvg, on="gene.id", match.hvg := TRUE]
+        selected.genes[all.hvg, on="gene.symbol", match.hvg := TRUE]
+        selected.genes[label.genes.dt, on="gene.id", match.hvg := TRUE]
+
+        msg.txt <- "Label specified genes on 1000 highly variable genes (HVGs)"
+        msg(info, msg.txt)
         output.file <- file.path(output.dir, "selected.variable.genes.png")
-        plot.variable.genes(seurat.object, genes.dt=selected.genes.matched,
+        plot.variable.genes(seurat.object,
+                            points=selected.genes[match.hvg==TRUE, points],
+                            labels=selected.genes[match.hvg==TRUE, gene.symbol],
                             output.file)
     }
     return(seurat.object)
@@ -1067,4 +1067,42 @@ filter.seurat <- function(seurat.object, output.dir, n.cells.keep=4000) {
     saveRDS(seurat.object.filtered, file=seurat.for.stator.file)
 
     return(seurat.object.filtered)
+}
+
+#' Helper function to create a feature plot for the metadata from Seurat object
+plot.features <- function(df, output.dir) {
+    p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
+        geom_point() +
+        scale_colour_gradient(low="gray90", high="black") +
+        stat_smooth(method=lm) +
+        scale_x_log10() +
+        scale_y_log10() +
+        labs(x="RNA counts, Log10", y="N transcripts, Log10")
+    plot.file <- file.path(output.dir, "feature.plot.png")
+    ggsave(plot.file, plot=p)
+}
+
+#' Helper function to filter out genes which cannot be mappes to Ensembl
+filter.ensembl <- function(seurat.object) {
+        ## filer all genes which cannot be matched to Ensembl
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+    genes <- rownames(seurat.object)
+    ensembl.ids <- genes[grep("^ENSG", genes)]
+    gene.symbols <- genes[!genes %in% ensembl.ids]
+
+    msg.txt <- sprintf("%s Ensembl ids and %s gene symbols detected.",
+                       length(ensembl.ids), length(gene.symbols))
+    msg(info, msg.txt)
+
+    if (length(gene.symbols) != 0) {
+        msg(info, "Converting gene symbols to Ensembl ids.")
+        gene.symbols <- data.table(gene.id=NA, gene.symbol=gene.symbols)
+        matched.ids <- get.gene.ids(gene.symbols, ensembl)
+    }
+
+    all.ensembl.ids <- c(ensembl.ids, matched.ids$ensembl_gene_id)
+    msg.txt <- sprintf("%s genes with Ensembl ids will be retained.",
+                       length(all.ensembl.ids))
+    msg(info, msg.txt)
+    seurat.object <- seurat.object[all.ensembl.ids, ]
 }

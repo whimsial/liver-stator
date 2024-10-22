@@ -175,11 +175,17 @@ seurat.all.filtered.hvg <- process.variable.genes(seurat.all.filtered,
                                                   output.dir=root.dir)
 hvg <- seurat.all.filtered.hvg@assays$RNA@var.features
 
-## append ADIPOR1 to HVGs
+## append labelled genes to HVGs
 ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-adipor1 <- data.table(gene.id=NULL, gene.symbol="ADIPOR1")
-adipor1 <- get.gene.ids(adipor1, ensembl)
-hvg <- c(hvg, adipor1$ensembl_gene_id)
+label.genes <- data.table(gene.id=label.genes, gene.symbol=label.genes)
+label.genes <- map.ensembl(label.genes, ensembl)
+label.genes[, `:=`(matched.id=FALSE, matched.symbol=FALSE)]
+label.genes[gene.id %in% rownames(seurat.all.filtered.hvg), matched.id := TRUE]
+label.genes[gene.symbol %in% rownames(seurat.all.filtered.hvg),
+            matched.symbol := TRUE]
+label.genes[matched.id==TRUE, gene := gene.id]
+label.genes[matched.id==FALSE & matched.symbol==TRUE, gene := gene.symbol]
+hvg <- c(hvg, label.genes[!is.na(gene), gene.symbol])
 
 ## sample 20k cells randomly from all donors
 seurat.for.stator <- filter.seurat(seurat.all.filtered.hvg, output.dir=root.dir,
