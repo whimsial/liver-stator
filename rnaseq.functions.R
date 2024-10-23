@@ -507,7 +507,8 @@ count.mt.genes <- function(seurat.obj) {
     require(Seurat)
     ## if MT- cannot be matched in gene names, then try excluding MT genes which
     ## are matched by Ensembl id
-    if (sum(PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")) != 0) {
+    matched.mt <- PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")
+    if (sum(matched.mt[!is.na(matched.mt)]) != 0) {
         seurat.obj[["percent.mt"]] <- PercentageFeatureSet(seurat.obj,
                                                            pattern="^MT-|^mt-")
     } else {
@@ -559,7 +560,7 @@ count.mt.genes <- function(seurat.obj) {
 #' @importFrom ggplot2 ggplot, geom_violin, geom_jitter, geom_point, labs, theme_minimal
 #' @importFrom cowplot plot_grid
 #' @importFrom ggplot2 ggsave
-create.seurat <- function(counts, this.sample, this.sample.dir) {
+create.seurat <- function(counts, this.sample, this.sample.dir, ensembl) {
 
     pre <- CreateSeuratObject(counts=counts, project=this.sample)
 
@@ -597,6 +598,9 @@ create.seurat <- function(counts, this.sample, this.sample.dir) {
     ## append info on duplets to Seurat meta.data
     pre[["doublet_prediction"]] <- dublets[, new.prediction]
     pre[["doublet_score"]] <- dublets[, score]
+
+    ## save created Seurat object
+
 
     ## plot numbers of genes, RNA counts, MT RNAs and ratio of counts of genes
     ## to RNAs
@@ -757,19 +761,21 @@ update.seurat.meta.data <- function(seurat.obj) {
     ## recompute nCount_RNA and nFeature_RNA
     n.counts <- Matrix::colSums(seurat.obj[["RNA"]]@counts)
     if (any(n.counts==0)) {
-        msg.txt <- sprintf("%s cells with 0 counts detcted. First 20 are:",
+        msg.txt <- sprintf("%s cells with 0 counts detected.",
                            sum(n.counts==0))
         msg(warn, msg.txt)
-        print(names(n.counts[n.counts==0])[1:20])
+        zero.counts <- names(n.counts[n.counts==0])
+        print(ifelse(length(zero.counts)>20, zero.counts[1:20], zero.counts))
     }
     seurat.obj@meta.data$nCount_RNA <- n.counts
 
     n.features <- Matrix::colSums(seurat.obj[["RNA"]]@counts > 0)
     if (any(n.features==0)) {
-        msg.txt <- sprintf("%s cells with 0 features detcted. First 20 are:",
+        msg.txt <- sprintf("%s cells with 0 features detected.",
                            sum(n.features==0))
         msg(warn, msg.txt)
-        print(names(n.features[n.features==0])[1:20])
+        zero.counts <- names(n.features[n.features==0])
+        print(ifelse(length(zero.counts)>20, zero.counts[1:20], zero.counts))
     }
     seurat.obj@meta.data$nFeature_RNA <- n.features
 
@@ -861,8 +867,8 @@ qc.seurat <- function(seurat.object, output.dir,
     meta.data[, `:=`(count.threshold=NULL, feature.threshold=NULL)]
 
     ## infer which cells fail user specified QC
-    qc.expr <- quote(nFeature_RNA < min.features & nCount_RNA < min.counts &
-                     percent.mt > max.mt & doublet_prediction != 0)
+    qc.expr <- quote(nFeature_RNA < min.features | nCount_RNA < min.counts |
+                     percent.mt > max.mt | doublet_prediction != 0)
     meta.data[eval(qc.expr), qc.fail := TRUE]
 
     msg.txt <- sprintf("Remove %s cells in %s samples -- fail supplied QC.",
@@ -877,6 +883,8 @@ qc.seurat <- function(seurat.object, output.dir,
 
     ## filter genes based on how many cells are they expressed in
     counts <- GetAssayData(object=seurat.object, slot="counts")
+    ## infer lowly expressed genes on a subset of cell that we keep
+    counts <- counts[, cells.to.keep, drop=FALSE]
     nonzero.counts <- counts > 0
     genes.expressed <- Matrix::rowSums(nonzero.counts) >= n.cells
     genes.to.keep <- names(genes.expressed[genes.expressed])
@@ -886,30 +894,37 @@ qc.seurat <- function(seurat.object, output.dir,
     msg(info, msg.txt)
 
     ## subset Seurat objects and check its correctness
-    seurat.object.subset <- seurat.object[genes.to.keep, cells.to.keep]
-    df <- as.data.frame(meta.data[qc.fail==FALSE])
+    seurat.object <- seurat.object[genes.to.keep, cells.to.keep]
+    counts <- GetAssayData(object=seurat.object, slot="counts")
+    row.sums <- Matrix::rowSums(counts)
+    col.sums <- Matrix::colSums(counts)
+    msg.txt <- "Summary of gene counts after QC"
+    msg(info, msg.txt)
+    print(summary(row.sums))
+    msg.txt <- "Summary of cell counts after QC"
+    msg(info, msg.txt)
+    print(summary(col.sums))
 
+    df <- as.data.frame(meta.data[qc.fail==FALSE])
     ## consistency checks
     if (any(is.na(df))) {
         stop("NAs detected in meta.data.")
     }
-    if (!identical(colnames(seurat.object.subset), df$barcode)) {
+    if (!identical(colnames(seurat.object), df$barcode)) {
         stop("Cell names in counts matrix do not match Seurat metadata.")
     }
 
-    seurat.object.subset@meta.data <- df
+    seurat.object@meta.data <- df
 
-    ## check the meta.data after subsetting in case we introduce cells with
-    ## 0 counts or 0 features
-    seurat.object.subset <- update.seurat.meta.data(seurat.object.subset)
+    ## update the meta.data after subsetting
+    seurat.object <- update.seurat.meta.data(seurat.object)
 
     ## plot the counts after filtering
     plot.features(df, output.dir)
 
-    saveRDS(seurat.object.subset,
-            file=file.path(output.dir, "filtered.seurat.RDS"))
+    saveRDS(seurat.object, file=file.path(output.dir, "filtered.seurat.RDS"))
 
-    return(seurat.object.subset)
+    return(seurat.object)
 }
 
 #' Process and visualise variable genes in a Seurat object
@@ -1026,6 +1041,8 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
         selected.genes[all.hvg, on="gene.id", match.hvg := TRUE]
         selected.genes[all.hvg, on="gene.symbol", match.hvg := TRUE]
         selected.genes[label.genes.dt, on="gene.id", match.hvg := TRUE]
+        selected.genes <- selected.genes[!(matched.id==FALSE &
+                                           matched.symbol==FALSE)]
 
         msg.txt <- "Label specified genes on 1000 highly variable genes (HVGs)"
         msg(info, msg.txt)
