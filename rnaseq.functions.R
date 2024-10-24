@@ -507,28 +507,26 @@ count.mt.genes <- function(seurat.obj) {
     require(Seurat)
     ## if MT- cannot be matched in gene names, then try excluding MT genes which
     ## are matched by Ensembl id
-    matched.mt <- PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")
-    if (sum(matched.mt[!is.na(matched.mt)]) != 0) {
-        seurat.obj[["percent.mt"]] <- PercentageFeatureSet(seurat.obj,
-                                                           pattern="^MT-|^mt-")
-    } else {
-        ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-        ## fetch mitochondrial genes using a filter
-        mt.genes <- setDT(
+    found.mt <- PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")
+
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+    mt.genes <- setDT(
             getBM(attributes=c('ensembl_gene_id', 'external_gene_name'),
                   filters='chromosome_name',
                   values='MT',
                   mart=ensembl))
-        ## get all gene names from the Seurat object
-        all.genes <- rownames(seurat.obj)
 
-        ## find MT genes in Seurat object
-        mt.ensembl <- mt.genes[ensembl_gene_id %in% all.genes, ensembl_gene_id]
-
-        ## save counts of MT genes
-        seurat.obj[["percent.mt"]] <- PercentageFeatureSet(seurat.obj,
-                                                           features=mt.ensembl)
+    all.genes <- rownames(seurat.obj)
+    genes <- intersect(all.genes, mt.genes$ensembl_gene_id)
+    if (length(genes) > 0) {
+        matched.mt <- PercentageFeatureSet(seurat.obj, features=genes)
+        all.mt <- found.mt + matched.mt
+    } else {
+        all.mt <- found.mt
     }
+
+    seurat.obj[["percent.mt"]] <- all.mt
+
     return(seurat.obj)
 }
 
@@ -543,6 +541,8 @@ count.mt.genes <- function(seurat.obj) {
 #' @param this.sample String specifying the name of the sample.
 #' @param this.sample.dir Full path to the directory containing 10x data for the
 #'        specified sample.
+#' @param ensembl.dt Data.table containing gene identifiers and gene symbols
+#'        from Ensembl. It is used to map transcripts to official gene names.
 #'
 #' @return A Seurat object with additional metadata fields and QC metrics.
 #'
@@ -552,18 +552,45 @@ count.mt.genes <- function(seurat.obj) {
 #'          part of quality control.
 #'
 #' @examples
+#' ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+#' ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
+#'                                        "external_gene_name",
+#'                                        "external_synonym"),
+#'                           mart=ensembl))
 #' seurat_obj <- create.seurat(counts, this.sample="GSM4041169",
-#'                             this.sample.dir="GSM4041169")
+#'                             this.sample.dir="GSM4041169",
+#'                             ensembl.dt)
 #'
 #' @importFrom Seurat CreateSeuratObject
 #' @importFrom data.table fread, setDT
 #' @importFrom ggplot2 ggplot, geom_violin, geom_jitter, geom_point, labs, theme_minimal
 #' @importFrom cowplot plot_grid
 #' @importFrom ggplot2 ggsave
-create.seurat <- function(counts, this.sample, this.sample.dir, ensembl) {
+create.seurat <- function(counts, this.sample, this.sample.dir, ensembl.dt) {
 
     pre <- CreateSeuratObject(counts=counts, project=this.sample)
 
+    msg.txt <- sprintf("Mapping transcripts to official gene symbols")
+    msg(info, msg.txt)
+
+    transcripts <- data.table(transcript=rownames(pre), gene.symbol="NA")
+    transcripts[ensembl.dt, on=c(transcript="external_synonym"),
+                gene.symbol := external_synonym]
+    transcripts[ensembl.dt, on=c(transcript="external_gene_name"),
+                gene.symbol := external_gene_name]
+    transcripts[ensembl.dt, on=c(transcript="ensembl_gene_id"),
+                gene.symbol := external_gene_name]
+    msg.txt <- sprintf("%s transcripts were not matched to Ensembl",
+                       transcripts[gene.symbol=="", .N])
+    msg(info, msg.txt)
+    msg(info, "Using default study identifiers for these.")
+    transcripts[gene.symbol=="" | gene.symbol=="NA", gene.symbol := transcript]
+
+    rownames(pre[["RNA"]]@counts) <- transcripts$gene.symbol
+    rownames(pre[["RNA"]]@data) <- transcripts$gene.symbol
+    pre <- UpdateSeuratObject(object=pre)
+
+    msg(info, "Processing Seurat meta.data.")
     ## create SC index as <sample_id>:<barcode>
     barcodes.file <- file.path(this.sample.dir, "barcodes.tsv")
     if (file.exists(barcodes.file)) {
@@ -600,8 +627,15 @@ create.seurat <- function(counts, this.sample, this.sample.dir, ensembl) {
     pre[["doublet_score"]] <- dublets[, score]
 
     ## save created Seurat object
+    seurat.file <- file.path(this.sample.dir, "seurat.RDS")
+    if (!file.exists(seurat.file)) {
+        msg.txt <- sprintf("Saving Seurat object to %s", seurat.file)
+        msg(info, msg.txt)
+        saveRDS(pre, file=seurat.file)
+    }
 
-
+    msg.txt <- sprintf("Saving diagnostic plots to %s", this.sample.dir)
+    msg(info, msg.txt)
     ## plot numbers of genes, RNA counts, MT RNAs and ratio of counts of genes
     ## to RNAs
     dt <- setDT(pre@meta.data)
@@ -685,19 +719,38 @@ create.seurat <- function(counts, this.sample, this.sample.dir, ensembl) {
 #' @importFrom DropletUtils read10xCounts
 #' @importFrom rhdf5 Read10X_h5
 process.samples.and.merge <- function(meta, output.dir) {
+    ## read and return the Merged Seurat object if exists
+    seurat.file <- file.path(output.dir, "merged.seurat.RDS")
+    if (file.exists(seurat.file)) {
+        msg.txt <- "Read the detected merged.seurat.RDS file"
+        msg(warn, msg.txt)
+        Merge <- readRDS(seurat.file)
+        return(Merge)
+    }
+
+    msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
+    msg(info, msg.txt)
+    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+    ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
+                                           "external_gene_name",
+                                           "external_synonym"),
+                              mart=ensembl))
+
     seurat.list <- list()
     all.samples <- meta[, unique(sample)]
 
     ## Loop through samples and create Seurat objects
     for (this.sample in all.samples) {
         this.meta <- meta[sample == eval(this.sample)][1]
-        msg.txt <- sprintf("Processing sample: %s", this.sample)
+        msg.txt <- sprintf("Processing sample: %s, %s of %s samples...",
+                           this.sample,
+                           which(all.samples==this.sample),
+                           length(all.samples))
         msg(info, msg.txt)
 
         this.sample.dir <- this.meta[, sample.dir]
         if (!dir.exists(this.sample.dir)) {
-            msg.txt <- "Sample directory listed in metadata does not exist.
-            Check input."
+            msg.txt <- "Sample directory listed in metadata does not exist."
             stop(msg(error, msg.txt))
         }
 
@@ -719,7 +772,8 @@ process.samples.and.merge <- function(meta, output.dir) {
         }
 
         seurat.list[[this.sample]] <- create.seurat(pre, this.sample,
-                                                    this.sample.dir)
+                                                    this.sample.dir, ensembl.dt)
+        msg(info, "Done.\n")
     }
 
     ## Merge all Seurat objects into one
@@ -738,7 +792,6 @@ process.samples.and.merge <- function(meta, output.dir) {
     ## Merge <- AddClinicalData(Merge, clinical_data)
 
     ## Save the merged Seurat object
-    seurat.file <- file.path(output.dir, "merged.seurat.RDS")
     saveRDS(Merge, file=seurat.file)
 
     ## Return the merged Seurat object
