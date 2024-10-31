@@ -236,128 +236,37 @@ cmd <- sprintf("rsync -chavzP %s eddie:/exports/eddie/scratch/aiakvlie/",
                genes.file)
 system(cmd)
 
-## Create and save cell annotation data for (Meta_data.csv) which maps cells
-## to disease states
-## -----------------------------------------------------------------------------
-## map samples to diagnoses
-meta.dt[sample %in% sample.map[sample.id %in% healthy, sample],
-        condition := "healthy"]
-meta.dt[grep("healthy", sample.file), condition := "healthy"]
-meta.dt[sample %in% sample.map[sample.id %in% steatosis, sample],
-        condition := "steatotic"]
-meta.dt[sample %in% sample.map[sample.id %in% fibrosis, sample],
-        condition := "fibrotic"]
-meta.dt[grep("cirrhotic", sample.file), condition := "cirrhotic"]
-
-## map cells to samples
-cell.map <- data.table(barcode=rownames(count))
-cell.map[, sample := gsub("(\\w+)_[A-Z]+.*", "\\1", barcode)]
-cell.map <- cell.map[unique(meta.dt, by="sample")[, .(sample, condition)],
-                     on="sample"]
-
-## map Ensembl gene ids to gene symbols
-ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-ensembl.ids <- data.table(gene.id=colnames(count))
-gene.symbols <- get.gene.symbols(ensembl.ids, ensembl)
+## save cell map as metadata for Stator
+stator.metadata <- cell.map[barcode %in% colnames(seurat.for.stator)]
 
 ## classify cells into cell types using celltype expression map
 celltype.exp.file <- file.path(root.dir, "output", "celltypes_map.csv")
 celltype.exp.map <- fread(celltype.exp.file, select=c(1, 3:9),
                           col.names=c("celltype", sprintf("gene%d", seq(7))))
-gene.symbols[celltype.exp.map, on=c(external_gene_name="gene1")]
 celltype.exp.map <- transpose(celltype.exp.map, make.names=1)
 
-count.long <- melt(as.data.table(count, keep.rownames=TRUE),
-                   measure.vars=names(count), id.vars="barcode",
-                   variable.name="gene.id", value.name="value")
-count.long <- count.long[value!=0]
-count.long[gene.symbols, on=c(gene.id="ensembl_gene_id"),
-           gene.symbol:=external_gene_name]
-
-label.celltype <- function(count.long, celltype.exp.map, label) {
-    markers <- celltype.exp.map[get(label)!="", get(label)]
-    cutoff <- ceiling(length(markers)/2)
-    re <- paste(markers, collapse="|")
-    count.long[grep(re, gene.symbol),
-               `:=`(candidate=eval(label),
-                    labels.expressed=paste(gene.symbol, collapse=","),
-                    n.expressed=.N), by="barcode"]
-    count.long[is.na(celltype) & !is.na(candidate) & n.expressed >= cutoff,
-               celltype := candidate]
-    return(count.long)
+label.celltype <- function(seurat.object, celltype.exp.map, label) {
+    marker.genes <- celltype.exp.map[, get(label)]
+    marker.genes <- marker.genes[marker.genes!=""]
+    data <- GetAssayData(seurat.object, slot="data")
+    subset <- data[rownames(data) %in% marker.genes, ]
+    expressed.markers <- subset > 1
+    expressing.cells <- colSums(expressed.markers) == length(marker.genes) / 2
+    return(names(expressing.cells[expressing.cells==TRUE]))
 }
 
 cell.labels <- c("MP", "pDC", "ILC", "T cell", "B cell", "Plasma cell",
                  "Mast cell", "Endothelia", "Mesenchyme", "Hepatocyte",
                  "Cholangiocyte", "Cycling")
-count.long[, celltype := NA]
+
 for (this.label in cell.labels) {
-    count.long <- label.celltype(count.long, celltype.exp.map, label=this.label)
+    expressing.cells <- label.celltype(seurat.for.stator, celltype.exp.map,
+                                       label=this.label)
+    cell.map[barcode %in% expressing.cells, celltype := eval(this.label)]
 }
-count.long[, `:=`(candidate=NULL, n.expressed=NULL, labels.expressed=NULL)]
-
-## annotate cell ids in the counts matrix by the inferred cell types
-cell.map[count.long[!is.na(celltype), .(barcode, celltype)], on="barcode",
-         celltype:=celltype]
 cell.map[is.na(celltype), celltype := "other"]
-
-## remove count.long and cleanup memory
-rm(count.long)
-gc()
 
 ## write Meta_Data.csv file with cell annotation which will be used by Stator
 ## Shiny app
 fwrite(cell.map[, .(barcode, condition, celltype)],
-       file=file.path(root.dir, "output", "full_run", "Meta_Data.csv"),
-       quote=TRUE)
-
-## Replace Ensembl IDs in Stator output with gene symbols
-## -----------------------------------------------------------------------------
-## replace gene ids in counts matrix
-ensembl.ids[gene.symbols, on=c(gene.id="ensembl_gene_id"),
-            gene.symbol := external_gene_name]
-ensembl.ids[gene.symbol=="" | is.na(gene.symbol), gene.symbol := gene.id]
-colnames(count) <- ensembl.ids[, gene.symbol]
-
-counts.file <- file.path(root.dir, "output", "full_run", "counts.csv")
-write.csv(count, file=counts.file, append=FALSE, quote=FALSE,
-          row.names=TRUE, col.names=TRUE)
-
-## replace gene ids in all d-tuples
-dtuples.file <- file.path(root.dir, "output", "full_run", "dtuples_output",
-                          "all_DTuples.csv")
-dtuples <- fread(dtuples.file)
-
-find.gene.symbols.dt <- function(ids, lookup.table) {
-    id.list <- unlist(strsplit(ids, "_"))
-    symbols <- sapply(id.list, function(id) {
-        symbol <- lookup.table[gene.id==id, gene.symbol]
-        if (length(symbol) == 0) return(NA)
-        return(unname(symbol))
-    })
-    paste(symbols, collapse = "_")
-}
-
-dtuples[, genes := sapply(genes, find.gene.symbols.dt, ensembl.ids)]
-fwrite(dtuples, file=dtuples.file)
-
-## replace gene ids in training data
-training.data.file <- file.path(root.dir, "output", "full_run", "output",
-                                "trainingData_20000Cells_1001Genes.csv")
-training.data <- fread(training.data.file)
-
-training.data.ids <- data.table(gene.id=names(training.data))
-training.data.ids[ensembl.ids, on="gene.id", gene.symbol := gene.symbol]
-names(training.data) <- training.data.ids[, gene.symbol]
-fwrite(training.data, file=training.data.file)
-
-## replace gene ids in MCMC graph
-mcmc.graph.file <- file.path(root.dir, "output", "full_run", "output",
-                            "MCMCgraph_20000Cells_1001Genes.csv")
-mcmc.graph <- fread(mcmc.graph.file)
-
-mcmc.graph.ids <- data.table(gene.id=names(mcmc.graph))
-mcmc.graph.ids[ensembl.ids, on="gene.id", gene.symbol := gene.symbol]
-mcmc.graph.ids[is.na(gene.symbol), gene.symbol := gene.id]
-names(mcmc.graph) <- mcmc.graph.ids[, gene.symbol]
-fwrite(mcmc.graph, file=mcmc.graph.file)
+       file=file.path(root.dir, "Meta_Data.csv"), quote=TRUE)
