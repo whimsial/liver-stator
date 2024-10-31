@@ -124,16 +124,19 @@ for (idx in seq_len(nrow(meta.dt))) {
                              file.path(unique(study.dir), sample.file)]
 
     ## extract sample data from archives
-    this.extracts <- extract.samples(this.archives, this.sample.dir)
-    meta.dt[sample==eval(this.sample), extract := this.extracts]
-    ## read 10X data from extracted archives
-    data <- read.10x.data(this.extracts, this.sample.dir)
-    all.10x.data[[this.sample]] <- data
+    if (new.run) {
+        this.extracts <- extract.samples(this.archives, this.sample.dir)
+        meta.dt[sample==eval(this.sample), extract := this.extracts]
+        ## read 10X data from extracted archives
 
-    ## perform QC step 1: detection of empty drops
-    true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
-                                    sample.barcodes=data$sample.barcodes$V1)
-    cells <- c(cells, true.cells)
+        data <- read.10x.data(this.extracts, this.sample.dir)
+        all.10x.data[[this.sample]] <- data
+
+        ## perform QC step 1: detection of empty drops
+        true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
+                                        sample.barcodes=data$sample.barcodes$V1)
+        cells <- c(cells, true.cells)
+    }
 
     ## perform QC step 2: detection of doublets
     ## first we run Jupyter notebook manually to work out suitable threshold
@@ -142,7 +145,7 @@ for (idx in seq_len(nrow(meta.dt))) {
     cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
                    --doublet_threshold %f", this.sample.dir, this.file.type,
                    0.15)
-    system(cmd)
+    if (new.run) system(cmd)
 }
 
 ## QC step 3: process all samples, convert to Seurat and merge
@@ -150,41 +153,39 @@ for (idx in seq_len(nrow(meta.dt))) {
 msg(bold, "Reading single cell data to Seurat and merging")
 seurat.all <- process.samples.and.merge(meta.dt, output.dir=root.dir)
 
-## create a mapping between gene ids and gene symbols in the counts
-## matrix and update all gene ids to gene symbols
-ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-stator.genes.dt <- data.table(gene.id=rownames(seurat.all),
-                              gene.symbol=rownames(seurat.all))
-mapped.genes.dt <- get.gene.symbols(rownames(seurat.all), ensembl)
-stator.genes.dt[mapped.genes.dt, on=c(gene.id="ensembl_gene_id"),
-                gene.symbol := external_gene_name]
-stator.genes.dt[gene.symbol=="", gene.symbol := gene.id]
-unique.statos.genes.dt <- unique(stator.genes.dt, by="gene.symbol")
-
-## different studies specify genes as ensemble id or as gene symbols or as
-## gene synonyms which creates duplicated rows in the count matrix after the
-## merge. We subset the count matrix to ensure uniqueness of rows.
-df <- seurat.all@meta.data
-seurat.unique.genes <- seurat.all[unique.statos.genes.dt$gene.id, ]
-seurat.unique.genes@meta.data <- df
-
 ## QC step 4: filter out genes/cells that do not pass QC thresholds
 ## -----------------------------------------------------------------------------
 msg(bold, "Performing QC of a merged Seurat object")
-seurat.qc <- qc.seurat(seurat.unique.genes, output.dir=root.dir)
+seurat.qc <- qc.seurat(seurat.all, output.dir=root.dir)
 
-## QC step 5: sample 20,000 cells, identify highly variable genes, label
-## core genes among HVGs, and prepare inputs for Stator
+## QC step 5: sample 20,000 cells
 ## -----------------------------------------------------------------------------
-msg(bold, "Sampling 20,000 cells")
+## create a mapping of cells to samples and conditions
+meta.dt[sample %in% sample.map[sample.id %in% healthy, sample],
+        condition := "healthy"]
+meta.dt[grep("healthy", sample.file), condition := "healthy"]
+meta.dt[sample %in% sample.map[sample.id %in% steatosis, sample],
+        condition := "steatotic"]
+meta.dt[sample %in% sample.map[sample.id %in% fibrosis, sample],
+        condition := "fibrotic"]
+meta.dt[grep("cirrhotic", sample.file), condition := "cirrhotic"]
 
-## sample 20k cells randomly from all donors
-seurat.for.stator <- filter.seurat(seurat.qc, output.dir=root.dir,
-                                   n.cells.keep=20000)
+## map cells to samples
+cell.map <- data.table(barcode=colnames(seurat.qc))
+cell.map[, sample := gsub("(\\w+)_[A-Z]+.*", "\\1", barcode)]
+cell.map <- cell.map[unique(meta.dt, by="sample")[, .(sample, condition)],
+                     on="sample"]
+cell.map[!is.na(barcode), uniqueN(barcode), by=c("sample", "condition")]
+
+msg(bold, "Sampling 20,000 cells")
+seurat.for.stator <- sample.seurat(seurat.qc, output.dir=root.dir,
+                                   cell.map=cell.map, n.cells.keep=20000)
 
 ## repeat the QC steps on a randomly selected subset of cells
 seurat.for.stator <- qc.seurat(seurat.for.stator, output.dir=root.dir)
 
+## Preparation for Stator
+## -----------------------------------------------------------------------------
 msg(bold, "Finding highly variable genes and preparing counts for Stator")
 ## load core genes for NAFLD
 core.eqtls <- load.rdata(file.path(root.dir,
@@ -196,7 +197,6 @@ core.genes <- c(core.eqtls[pvalue_trans<1E-6, gene_symbol],
                 core.pqtls[pvalue_trans<1E-6 & eff.numtransqtls>=5,
                            gene_symbol])
 
-## run QC step 5 to select most variable genes and prepare inputs for Stator
 label.genes <- c("ADIPOQ", "ADIPOR1", "ADIPOR2")
 seurat.for.stator <- process.variable.genes(seurat.for.stator,
                                             core.genes=core.genes,
@@ -204,36 +204,13 @@ seurat.for.stator <- process.variable.genes(seurat.for.stator,
                                             output.dir=root.dir)
 hvg <- seurat.for.stator@assays$RNA@var.features
 
+## doe not work due to https://github.com/satijalab/seurat/issues/8242
+cluster.cells(seurat.for.stator, output.dir=root.dir)
+
 ## extract sparse count matrix, convert to dense matrix
 counts <- GetAssayData(object=seurat.for.stator, slot="counts")
 summary(rowSums(counts))
 summary(colSums(counts))
-
-## check representation of each study in final set of cells
-## map samples to diagnoses
-meta.dt[sample %in% sample.map[sample.id %in% healthy, sample],
-        condition := "healthy"]
-meta.dt[grep("healthy", sample.file), condition := "healthy"]
-meta.dt[sample %in% sample.map[sample.id %in% steatosis, sample],
-        condition := "steatotic"]
-meta.dt[sample %in% sample.map[sample.id %in% fibrosis, sample],
-        condition := "fibrotic"]
-meta.dt[grep("cirrhotic", sample.file), condition := "cirrhotic"]
-
-## map cells to samples
-cell.map <- data.table(barcode=colnames(counts))
-cell.map[, sample := gsub("(\\w+)_[A-Z]+.*", "\\1", barcode)]
-cell.map <- cell.map[unique(meta.dt, by="sample")[, .(sample, condition)],
-                     on="sample"]
-cell.map[!is.na(barcode), uniqueN(barcode), by=c("sample", "condition")]
-
-## name all genes using gene symbols
-stator.genes.dt <- unique.statos.genes.dt[gene.id %in% rownames(counts)]
-rownames(counts) <- stator.genes.dt[, gene.symbol]
-
-## map HVGs to gene symbols in counts matrix
-hvg.dt <- data.table(gene.id=hvg, gene.symbol=hvg)
-hvg.dt[stator.genes.dt, on="gene.id", gene.symbol := i.gene.symbol]
 
 ## cleanup to save memory before converting sparse counts matrix to dense matrix
 rm(all.10x.data)
@@ -248,7 +225,7 @@ counts.file <- file.path(root.dir, "counts.csv")
 write.csv(counts, file=counts.file, append=FALSE, quote=FALSE,
           row.names=TRUE, col.names=TRUE)
 genes.file <- file.path(root.dir, "genes.csv")
-write.table(t(hvg.dt$gene.symbol), file=genes.file, sep=",", quote=FALSE,
+write.table(hvg, file=genes.file, sep=",", quote=FALSE,
             col.names=FALSE, row.names=FALSE)
 
 ## copy counts and genes files to Eddie

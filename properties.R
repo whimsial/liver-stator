@@ -23,6 +23,10 @@ if (FALSE) {
     devtools::install_github(repo="hhoeflin/hdf5r")
     devtools::install_github(repo="mojaveazure/loomR", ref="develop")
     BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
+
+    ## in case of error in https://github.com/satijalab/seurat/issues/8100
+    install.packages("Matrix", type="source")
+    install.packages("irlba", type="source")
 }
 
 # root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev"
@@ -36,3 +40,5 @@ studies.dt <- fread(studies.list.file)
 
 ## dublet threshold (inferred from distribution plots in QC step 2)
 dublet.threshold <- 0.15
+
+new.run <- FALSE

@@ -1047,7 +1047,7 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     msg.txt <- "Plot most variable genes on Expression-Variance plot"
     msg(info, msg.txt)
     output.file <- file.path(output.dir, "most.variable.genes.png")
-    plot.variable.genes(seurat.object, points=top.variable.genes$gene.id,
+    plot.variable.genes(seurat.object, points=top.variable.genes$gene.symbol,
                         labels=top.variable.genes$gene.symbol, output.file)
 
     ## process core genes if specified
@@ -1057,11 +1057,9 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
         msg(info, msg.txt)
         selected.genes <- data.table(gene.id=core.genes, gene.symbol=core.genes)
         selected.genes <- map.ensembl(selected.genes, ensembl)
-
-        selected.genes[, `:=`(matched.id=FALSE, matched.symbol=FALSE)]
-        selected.genes[gene.id %in% rownames(seurat.object), matched.id := TRUE]
         selected.genes[gene.symbol %in% rownames(seurat.object),
                        matched.symbol := TRUE]
+
         ## append labeled genes if specified
         if (!is.null(label.genes)) {
             msg.txt <- sprintf("%s additional genes to label",
@@ -1070,19 +1068,15 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
             label.genes.dt <- data.table(gene.id=label.genes,
                                          gene.symbol=label.genes)
             label.genes.dt <- map.ensembl(label.genes.dt, ensembl)
-            label.genes.dt[, `:=`(matched.id=FALSE, matched.symbol=FALSE)]
-            label.genes.dt[gene.id %in% rownames(seurat.object),
-                           matched.id := TRUE]
+            label.genes.dt[, matched.symbol := FALSE]
             label.genes.dt[gene.symbol %in% rownames(seurat.object),
                            matched.symbol := TRUE]
             selected.genes <- rbind(selected.genes, label.genes.dt)
         }
 
         ## plot core genes and labelled genes
-        selected.genes <- unique(selected.genes, by=c("gene.id", "gene.symbol"))
-        selected.genes[matched.id==TRUE, points := gene.id]
-        selected.genes[matched.id==FALSE & matched.symbol==TRUE,
-                       points := gene.symbol]
+        selected.genes <- unique(selected.genes[matched.symbol==TRUE],
+                                 by="gene.symbol")
 
         msg.txt <- "Map HVGs to Ensembl"
         msg(info, msg.txt)
@@ -1094,44 +1088,98 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
         selected.genes[all.hvg, on="gene.id", match.hvg := TRUE]
         selected.genes[all.hvg, on="gene.symbol", match.hvg := TRUE]
         selected.genes[label.genes.dt, on="gene.id", match.hvg := TRUE]
-        selected.genes <- selected.genes[!(matched.id==FALSE &
-                                           matched.symbol==FALSE)]
 
-        msg.txt <- "Label specified genes on 1000 highly variable genes (HVGs)"
+        msg.txt <- sprintf("Label %s core genes on 1000 HVGs",
+                           selected.genes[match.hvg==TRUE, .N])
         msg(info, msg.txt)
         output.file <- file.path(output.dir, "selected.variable.genes.png")
         plot.variable.genes(seurat.object,
-                            points=selected.genes[match.hvg==TRUE, points],
+                            points=selected.genes[match.hvg==TRUE, gene.symbol],
                             labels=selected.genes[match.hvg==TRUE, gene.symbol],
                             output.file)
     }
     return(seurat.object)
 }
 
-filter.seurat <- function(seurat.object, output.dir, n.cells.keep=4000) {
-    ## randomly sample n.cells.keep cells
-    cells.to.keep <- sample(colnames(seurat.object), size=n.cells.keep,
-                            replace=FALSE)
+cluster.cells <- function(seurat.object, cell.map, output.dir) {
+    seurat.object <- NormalizeData(seurat.object,
+                                   normalization.method="LogNormalize",
+                                   scale.factor=10000)
+    seurat.object <- FindVariableFeatures(seurat.object, selection.method="vst",
+                                          nfeatures=2000)
+    all.genes <- rownames(seurat.object)
+    seurat.object <- ScaleData(seurat.object, features=all.genes)
+    seurat.object <- RunPCA(seurat.object,
+                            features=VariableFeatures(object=seurat.object))
+    seurat.object <- FindNeighbors(seurat.object, dims=1:10)
+    seurat.object <- FindClusters(seurat.object, resolution=0.5)
+    # seurat.object <- RunUMAP(seurat.object, dims=1:10)
+    seurat.object@meta.data$condition <-
+        cell.map[match(colnames(seurat.object), barcode), as.factor(condition)]
+    p <- DimPlot(seurat.object, reduction="pca", group.by="condition",
+                 label=TRUE, combine=FALSE)
+    ggsave(p, file=file.path(output.dir, "clusters.png"))
+}
 
+sample.seurat <- function(seurat.object, output.dir, cell.map, n.cells.keep) {
+    ## map cell counts to samples
+    cell.counts <- as.data.table(table(Idents(seurat.object)))
+    setnames(cell.counts, old=c("V1", "N"), new=c("sample", "cell.count"))
+
+    ## join with cell.map to bring in conditions
+    cell.map <- cell.map[cell.counts, on="sample"]
+    cell.map[, cell.count.by.condition := .N, by=condition]
+
+    msg.txt <- "Cells in Seurat object were mapped to the following conditions."
+    msg(info, msg.txt)
+    print(cell.map[, .(N.cells=unique(cell.count.by.condition)), by=condition])
+
+    ## sample size for each condition to ensure equal representation in the
+    ## final sample
+    min.cells <- cell.map[, n.cells.keep / uniqueN(condition)]
+    cell.map[, sample.size := ifelse(cell.count.by.condition < min.cells,
+                                     cell.count.by.condition, min.cells)]
+
+    ## randomly sample cells ensuring proportional representation of samples
+    msg.txt <- sprintf("Sampling %s cells from each of %s conditions.",
+                       min.cells, n.cells.keep)
+    msg(info, msg.txt)
+    msg.txt <- sprintf("Default sample: %s cells, smallest sample: %s cells",
+                       min.cells,
+                       cell.map[, min(cell.count.by.condition)])
+    msg(info, msg.txt)
+    msg.txt <- sprintf("In total, %s of %s requested cells will be sampled",
+                       cell.map[, unique(sample.size), by=condition][, sum(V1)],
+                       n.cells.keep)
+    msg(info, msg.txt)
+
+    cells.to.keep <- NULL
+    for (this.condition in cell.map[, unique(condition)]) {
+        this.cell.map <- cell.map[condition==eval(this.condition)]
+        this.sample <- this.cell.map[, sample(barcode, size=unique(sample.size),
+                                              replace=FALSE)]
+        cells.to.keep <- c(cells.to.keep, this.sample)
+    }
+
+    ## subset Seurat object
     dt <- setDT(seurat.object@meta.data)
-    dt <- dt[barcodes %in% cells.to.keep]
-
-    cat(nrow(dt), "of", ncol(seurat.object), "cells selected\n")
-
-    ## perform subset and update metadata manually (this is a workaround for the
-    ## issue where subset function from Seurat package would not run properly)
-    cells.to.keep <- dt$barcode
     seurat.object.filtered <- seurat.object[, cells.to.keep]
+    dt <- dt[match(colnames(seurat.object.filtered), barcodes)]
+
+    if (!dt[, identical(barcodes, colnames(seurat.object.filtered))])
+        stop(msg(error, "Barcodes in counts matrix do not match meta.data."))
+
     seurat.object.filtered@meta.data <- setDF(dt)
+
+    seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
 
     ## run some checks to ensure consistency between meta data and Seurat object
     if (any(is.na(seurat.object.filtered@meta.data)))
         stop(msg(error, "NAs detected in meta.data."))
-    if (!identical(colnames(seurat.object.filtered),
-        seurat.object.filtered@meta.data$barcode))
-        stop(msg(error, "Cell names in counts matrix do not match meta.data."))
-    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode))
-        stop(msg(error, "Cells labeled for removal detected in the filtered Seurat object."))
+    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode)) {
+        msg.txt <- "Cells labeled for removal are in filtered Seurat object."
+        stop(msg(error))
+    }
 
     seurat.for.stator.file <- file.path(output.dir, "seurat.for.stator.RDS")
     saveRDS(seurat.object.filtered, file=seurat.for.stator.file)
