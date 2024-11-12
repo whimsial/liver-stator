@@ -9,7 +9,7 @@ module load roslin/nextflow/22.10.7
 module load singularity
 
 ## pull development branch of Stator
-nextflow pull AJnsm/Stator -r develop
+# nextflow pull AJnsm/Stator -r develop
 
 ## create environment variables
 export NXF_SINGULARITY_CACHEDIR=/exports/igmm/eddie/khamseh-lab/aiakovliev/.singularity

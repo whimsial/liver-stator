@@ -20,6 +20,7 @@ full_run/
 .RData
 .RDataTmp
 .idea
+.vscode
 
 # Python virtual environment
 venv/
