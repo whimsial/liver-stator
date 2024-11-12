@@ -53,7 +53,7 @@ library(biomaRt)
 library(ggplot2)
 library(cowplot)
 
-## Preparation step. (Skip if you have data already available)
+## Preparation step.
 ## Set GEO ID, URLs, and study directories and file names.
 #'
 #' @param root.dir Full path to large storage where the project data is to be
@@ -81,6 +81,9 @@ study.file <- file.path(study.dir, basename(data.url))
 filelist.file <- file.path(study.dir, basename(filelist.url))
 soft.file <- file.path(study.dir, basename(softfile.url))
 
+## GEO step. Download GEO dataset, extract and process files
+## (Skip if you have data already available)
+## -----------------------------------------------------------------------------
 ## download specified GEO dataset
 source(file.path(working.dir, "rnaseq.functions.R"))
 download.study(study.name, study.file, data.url, filelist.file, filelist.url)
