@@ -204,7 +204,7 @@ seurat.for.stator <- process.variable.genes(seurat.for.stator,
                                             output.dir=root.dir)
 hvg <- seurat.for.stator@assays$RNA@var.features
 
-## doe not work due to https://github.com/satijalab/seurat/issues/8242
+## dos not work due to https://github.com/satijalab/seurat/issues/8242
 cluster.cells(seurat.for.stator, output.dir=root.dir)
 
 ## extract sparse count matrix, convert to dense matrix
