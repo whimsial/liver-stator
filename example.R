@@ -6,11 +6,16 @@
 ## -----------------------------------------------------------------------------
 
 ## Install required dependencies on HPC.
-#' Minimum required R version is 4.0.2 and gcc version 9.4.0
-#' On EDDIE load these with: `igmm/apps/R/4.0.2.gcc.9.4.0`
+#' Minimum required R version is 4.3.1 (4.4 recommended) and gcc version 9.4.0
+#' On EDDIE run: `module load roslin/R/4.4.0`
 #' Some packages can be installed from CRAN, others require BiocManager, or
 #' installation from GitHub. Many packages are built from source so this step
-#' may take some time but it has to be executed only once.
+#' may take some time (and sometimes break) but it has to be executed only once.
+#'
+#' Installing R packages with complex dependnecies on Eddie is a tedius and
+#' complicated task and many things may throw errors. The script
+#' `dependencies.R` contains code which I used to install the packages. The
+#' order of installation and specific package versions are what worked for me.
 #'
 #' @param install.dependencies Logical specifying whether to install required
 #'        packages.
@@ -20,28 +25,7 @@
 install.dependencies <- FALSE ## set to TRUE to install
 my.lib <- .libPaths()[[1]]
 
-if (FALSE) {
-    library(BiocManager)
-    library(devtools)
-    install.packages(c("ggExtra", "dplyr", "ggplot2", "xlsx", "stringr",
-                       "rjson", "randomcoloR"), lib=my.lib, quiet=TRUE)
-    ## on Eddie loomR and hdf5r has to be installed from GitHub
-    devtools::install_github(repo="hhoeflin/hdf5r")
-    ## DropletUtils is installable using Bioconductor
-    BiocManager::install(c("DropletUtils", "S4Vectors"),
-                         lib=my.lib, ask=FALSE)
-    ## seurat@v4.4.0 is available on GitHub
-    devtools::install_github("satijalab/seurat@v4.4.0")
-    devtools::install_github("satijalab/seurat-object@v4.1.4")
-    devtools::install_github(repo="mojaveazure/loomR", ref="develop")
-    ## sctransform required above dependencies so we install it last
-    BiocManager::install("sctransform", lib=my.lib, ask=FALSE)
-
-    ## in case of error in https://github.com/satijalab/seurat/issues/8100
-    ## reinstall Matrix and irlba from source and then install seurat
-    install.packages("Matrix", type="source")
-    install.packages("irlba", type="source")
-}
+if (install.dependencies) source("dependencies.R")
 
 ## Load R packages.
 library(data.table)

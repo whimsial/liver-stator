@@ -2,21 +2,39 @@
 
 Analysis of scRNA-seq from healthy and pathologic livers using [Stator](https://github.com/AJnsm/Stator).
 
-The main analysis pipeline is implemented in [`pipeline.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.R). It also includes the QC steps written as a collection of R functions in [`rnaseq.functinos.R`](https://github.com/whimsial/liver-stator/blob/main/rnaseq.functions.R) to download and process the raw data from 
-[Gene Expression Omnibus](https://www.ncbi.nlm.nih.gov/geo/) followed by the QC steps described below. 
+The main analysis pipeline is implemented in [`pipeline.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.R). It also includes the QC steps written as a collection of R functions in [`rnaseq.functinos.R`](https://github.com/whimsial/liver-stator/blob/main/rnaseq.functions.R) to download and process the raw data from
+[Gene Expression Omnibus](https://www.ncbi.nlm.nih.gov/geo/) followed by the QC steps described below.
+
+Alternatively, if data integration between multiple studies is not needed a
+simplified example script [`example.R`](https://github.com/whimsial/liver-stator/blob/main/example.R) can be used.
+
+## Example script
+
+To run the example script on HPC cluster (e.g. EDDIE):
+
+1. login to one of the Wild West nodes.
+2. clone this repository and navigate to it (all subsequent steps should be run from the
+root of this repository).
+2. in the shell session run [`setup.sh`](https://github.com/whimsial/liver-stator/blob/main/setup.sh) to load R and prepare virtual environment for Python.
+3. then start R, and source [`example.R`](https://github.com/whimsial/liver-stator/blob/main/example.R) but first modify it according to your analysis.
+
+**Note**: You will need to install R dependencies so set `install.dependencies<-TRUE` in
+the `example.R` script. This should be done once. The script will then source [`dependencies.R`](https://github.com/whimsial/liver-stator/blob/main/dependencies.R) which will try to
+install multiple R packages from CRAN, BiocManager, or GitHub. Many of these will have to
+be built from source which takes a long time. See [`dependencies.R`](https://github.com/whimsial/liver-stator/blob/main/dependencies.R) for details.
 
 ## Pipeline
 
 Depends on:
 
-- R packages: `data.table`, `Seurat`, `DropletUtils`, `HDF5Array`, `biomaRt` (for full list see [`properties.R`](https://github.com/whimsial/liver-stator/blob/main/properties.R)).
+- R packages: `data.table`, `Seurat`, `DropletUtils`, `HDF5Array`, `biomaRt` (for full list see [`dependencies.R`](https://github.com/whimsial/liver-stator/blob/main/dependencies.R)).
 
-R packages should be installed user R library (see [`properties.R`](https://github.com/whimsial/liver-stator/blob/main/properties.R) for details).
+R packages should be installed user R library (see [`dependencies.R`](https://github.com/whimsial/liver-stator/blob/main/dependencies.R) for details).
 
 
 - Python packages: `scanpy`, `scrublet` (for full list see [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) and [`requirements.txt`](https://github.com/whimsial/liver-stator/blob/main/requirements.txt)).
 
-The Python code can (and probably should) also be run interactively using Jupyter notebook [`doublets.ipynb`](https://github.com/whimsial/liver-stator/blob/main/doublets.ipynb). It is useful to inspect distributions of doublets by eye to come up with a suitable threshold to be used in [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) (default is 0.15).
+The Python code can also be run interactively using Jupyter notebook [`doublets.ipynb`](https://github.com/whimsial/liver-stator/blob/main/doublets.ipynb). It is useful to inspect distributions of doublets by eye to come up with a suitable threshold to be used in [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) (default is 0.15).
 
 I found it useful to run Jupyter notebook inside Python virtual environment on the HPC and connect to it via SSH tunnel:
 
@@ -43,9 +61,9 @@ The `scrub_doublets` function processes scRNA-seq data and returns **doublet sco
 - a continuous score that represents the likelihood that each cell (or transcriptomic profile) is a doublet. The score is typically a value between 0 and 1, where a higher score indicates a higher probability of the cell being a doublet.
 - this function usually also involves setting a threshold score to classify cells as singlets or doublets. This threshold might be determined automatically by the algorithm based on the distribution of doublet scores across all cells, or it can be manually set by the user.
 
-The identification of the doublets cutoff should be performed interactively using Jupyter notebook.  
+The identification of the doublets cutoff should be performed interactively using Jupyter notebook.
 
-Having identified the threshold, [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) can be run for all samples passing in the threshold as a command line argument. An example of running this script from R can be found in [`pipeline.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.R). 
+Having identified the threshold, [`doublet.py`](https://github.com/whimsial/liver-stator/blob/main/doublet.py) can be run for all samples passing in the threshold as a command line argument. An example of running this script from R can be found in [`pipeline.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.R).
 
 
 ### Step 3: create a Seurat object from SingleCellExperiment data
@@ -67,7 +85,7 @@ visually assess the quality of the data after filtering.
 
 Perform a series of operations on a Seurat object to identify
 and visualize highly variable genes. Normalize the data, identify variable
-features, map gene IDs to Ensembl, and plot these genes on mean expression vs variance plot. 
+features, map gene IDs to Ensembl, and plot these genes on mean expression vs variance plot.
 
 In this step we also add and label core genes from GATE analysis and check if they appear as highly variable genes in single cell data.
 
@@ -76,6 +94,6 @@ Finally, we write the counts matrix and a list of highly variable genes to files
 
 ## Known issues
 
-While running this analysis I encountered several issues with the newest release of Seurat 5 R package. These are to do with the new layers introduced to the standard Seurat objects. Downgrading to version 4.4.0 together with seurat-object 4.1.4 solved these issues for me and thus I recommend to run this pipeline with these versions. 
+While running this analysis I encountered several issues with the newest release of Seurat 5 R package. These are to do with the new layers introduced to the standard Seurat objects. Downgrading to version 4.4.0 together with seurat-object 4.1.4 solved these issues for me and thus I recommend to run this pipeline with these versions.
 
 In time I will open an issue on Seurat's GitHub to ask for help with Seurat 5.
