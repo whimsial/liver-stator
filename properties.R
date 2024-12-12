@@ -19,7 +19,7 @@ codebase.dir <- "~/repos/liver-stator"
 studies.list.file <- file.path(codebase.dir, "liver_studies.tsv")
 studies.dt <- fread(studies.list.file)
 
-## dublet threshold (inferred from distribution plots in QC step 2)
-dublet.threshold <- 0.15
+## doublet threshold (inferred from distribution plots in QC step 2)
+doublet.threshold <- 0.15
 
 new.run <- FALSE

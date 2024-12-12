@@ -38,8 +38,24 @@ install_if_not_installed <- function(package_names, lib) {
     }
 }
 
+## Problem: can't load R4.4
+## Add to ~/.bashrc:
+##. /etc/profile.d/modules.sh
+## source /exports/applications/support/set_qlogin_environment.sh
+## module load igmm/apps/R/4.0.2.gcc.9.4.0
+
+## Start new session, then
+## module load roslin/R/4.4.0
+
+## Path to my R library (Lana)
+# my.lib <- "/exports/igmm/eddie/ponting-lab/sbraich2/Rlibrary"
+
+## When R suggests to load packages locally do this to install packages in the store .libPaths( c(my.lib, .libPaths()))
+## my.lib <- .libPaths()[[1]]
+
 ## install devtools. If installation throws an error, restart R and install
 ## htmltools with install.packages("htmltools", lib=my.lib)
+## For R4.3 if error persists install.packages("httpuv", lib=my.lib)
 install_if_not_installed("devtools", my.lib)
 install_if_not_installed("BiocManager", my.lib)
 BiocManager::install(version="3.20")
@@ -102,3 +118,10 @@ if (FALSE) {
     install.packages("Matrix", type="source")
     install.packages("irlba", type="source")
 }
+
+## UPDATE: Install scDblFinder for doublet detection - substitution for Scrublet
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("scDblFinder")

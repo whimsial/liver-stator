@@ -217,9 +217,9 @@ extract.samples <- function(this.archives, this.sample.dir) {
 #' @importFrom data.table fread data.table
 #' @importFrom rhdf5 h5read
 #' @importFrom DropletUtils read10xCounts
-read.10x.data <- function(this.extracts, this.sample.dir) {
+read.10x.data <- function(this.extracts, this.sample.dir, mtx.files=c("barcodes.tsv", "genes.tsv", "matrix.mtx")) {
     ## check if MTX files were provided
-    mtx.files <- c("barcodes.tsv", "genes.tsv", "matrix.mtx")
+    # mtx.files <- c("barcodes.tsv", "genes.tsv", "matrix.mtx")
     if (all(mtx.files %in% basename(this.extracts))) {
         ## read barcodes
         sample.barcodes.file <- this.extracts[grep("barcodes", this.extracts)]
@@ -279,7 +279,7 @@ read.10x.data <- function(this.extracts, this.sample.dir) {
 remove.emptydrops <- function(sce, sample, sample.barcodes) {
     set.seed(100)
     my.count <- counts(sce)
-    colnames(my.count) <- paste0(sample, ":", sample.barcodes)
+    colnames(my.count) <- paste0(sample, "_", sample.barcodes)
 
     msg(info, "Starting emptyDrops")
     e.out <- tryCatch(
@@ -508,16 +508,28 @@ count.mt.genes <- function(seurat.obj) {
     ## if MT- cannot be matched in gene names, then try excluding MT genes which
     ## are matched by Ensembl id
     found.mt <- PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")
-
-    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-    mt.genes <- setDT(
-            getBM(attributes=c('ensembl_gene_id', 'external_gene_name'),
-                  filters='chromosome_name',
-                  values='MT',
-                  mart=ensembl))
-
+    tryCatch({
+        msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
+        msg(info, msg.txt)
+        ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+        ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
+                                               "external_gene_name",
+                                               "external_synonym"),
+                                  mart=ensembl))
+    }, error = function(e) {
+        cat("Error requesting data: ", e$message, "\n")
+        msg(info, "loading from file")
+        ensembl.dt <- fread("ensemblgenes_latest.csv", select=1:2, 
+                            col.names=c("ensembl_gene_id", 
+                                        "external_gene_name"))
+        ## TODO: can't find this, needs fixing
+        ensembl.dt[, external_synonym := external_gene_name]
+    })
+    
+    mt.genes <- ensembl.dt[grep("^MT", external_gene_name)]
     all.genes <- rownames(seurat.obj)
-    genes <- intersect(all.genes, mt.genes$ensembl_gene_id)
+    genes <- mt.genes[external_gene_name %in% all.genes, 
+                      external_gene_name]
     if (length(genes) > 0) {
         matched.mt <- PercentageFeatureSet(seurat.obj, features=genes)
         all.mt <- found.mt + matched.mt
@@ -543,6 +555,8 @@ count.mt.genes <- function(seurat.obj) {
 #'        specified sample.
 #' @param ensembl.dt Data.table containing gene identifiers and gene symbols
 #'        from Ensembl. It is used to map transcripts to official gene names.
+#' @param doublet.method.scDblFinder a flag to use scDblFinder for doublet 
+#'        detection, srcublet is used if FALSE
 #'
 #' @return A Seurat object with additional metadata fields and QC metrics.
 #'
@@ -566,9 +580,29 @@ count.mt.genes <- function(seurat.obj) {
 #' @importFrom ggplot2 ggplot, geom_violin, geom_jitter, geom_point, labs, theme_minimal
 #' @importFrom cowplot plot_grid
 #' @importFrom ggplot2 ggsave
-create.seurat <- function(counts, this.sample, this.sample.dir, ensembl.dt) {
-
-    pre <- CreateSeuratObject(counts=counts, project=this.sample)
+create.seurat <- function(true.cells, this.sample, this.sample.dir, ensembl.dt, 
+                          doublet.method.scDblFinder=TRUE) {
+    ## Studies may have sample data in mtx or h5 format which are to be
+    ## read by read10xCounts and Read10X_h5 respectively.
+    ## Thus, we handle both cases here conditional on file types.
+    sample.files <- list.files(this.sample.dir)
+    if (any(grepl("mtx", sample.files))) {
+        pre <- read10xCounts(this.sample.dir, col.names=TRUE)
+        pre <- counts(pre)
+    } else if (any(grepl("h5", sample.files))) {
+        this.h5.file <- sample.files[grep("*.h5", sample.files)]
+        pre <- Read10X_h5(file.path(this.sample.dir, this.h5.file),
+                          use.names=TRUE, unique.features=TRUE)
+    } else {
+        msg.txt <- "Either .mtx or .h5 file should be present.
+        Check input directory."
+        stop(msg(error, msg.txt))
+    }
+    ## filter 10x counts to keep only true cells
+    this.true.cells <- remove.sample.from.barcode(true.cells)
+    pre <- pre[, colnames(pre) %in% this.true.cells]
+    ## Create Seurat object with filtered counts
+    pre <- CreateSeuratObject(counts=pre, project=this.sample)
 
     msg.txt <- sprintf("Mapping transcripts to official gene symbols")
     msg(info, msg.txt)
@@ -591,40 +625,43 @@ create.seurat <- function(counts, this.sample, this.sample.dir, ensembl.dt) {
     pre <- UpdateSeuratObject(object=pre)
 
     msg(info, "Processing Seurat meta.data.")
-    ## create SC index as <sample_id>:<barcode>
-    barcodes.file <- file.path(this.sample.dir, "barcodes.tsv")
-    if (file.exists(barcodes.file)) {
-        barcodes <- fread(barcodes.file, header=FALSE)$V1
-        barcodes <- paste0(this.sample, "_", barcodes)
-    } else {
-        barcodes <- paste0(this.sample, "_", colnames(pre))
-    }
-    pre$barcodes <- barcodes
+    ## pass SC index as <sample_id>_<barcode>
+    pre$barcodes <- true.cells
     pre$sample <- this.sample
     pre$orig.ident <- this.sample
 
     ## update Seurat meta.data
     pre <- update.seurat.meta.data(pre)
 
-    ## read Dublet predictions and scores
-    prediction.file <- file.path(this.sample.dir,
-                                 "scrublet_EDR0.008_PredictedDoublets.csv")
-    dublet.file <- file.path(this.sample.dir,
-                             "scrublet_EDR0.008_DoubletScores.csv")
+    ## read doublet predictions and scores
+    if (doublet.method.scDblFinder){
+        prediction.file <- file.path(this.sample.dir,
+                                     "scDblFinder_EDR0.008_PredictedDoublets.csv")
+        doublet.file <- file.path(this.sample.dir,
+                                 "scDblFinder_EDR0.008_DoubletScores.csv")
+    } else {
+        prediction.file <- file.path(this.sample.dir,
+                                     "scrublet_EDR0.008_PredictedDoublets.csv")
+        doublet.file <- file.path(this.sample.dir,
+                                 "scrublet_EDR0.008_DoubletScores.csv")
+        ## a given cell is a duplet if doublet_score > threshold.
+        ## original threshold was 0.35, but we set a more stringent threshold
+        ## of 0.15 which corresponds to the threshold for doublet detection
+        ## from step 2.
+    }
     doublet_prediction <- fread(prediction.file)
-    doublet_score <- fread(dublet.file)
+    doublet_score <- fread(doublet.file)
+    doublets <- data.table(prediction=doublet_prediction$V1,
+                           score=doublet_score$V1)
+    if (doublet.method.scDblFinder){
+        pre[["doublet_prediction"]] <- doublets[, prediction]
+    } else {
+        doublets[, new.prediction := ifelse(score>doublet.threshold, 1, 0)]
 
-    ## a given cell is a duplet if doublet_score > threshold.
-    ## original threshold was 0.35, but we set a more stringent threshold
-    ## of 0.15 which corresponds to the threshold for dublet detection
-    ## from step 2.
-    dublets <- data.table(prediction=doublet_prediction$V1,
-                          score=doublet_score$V1)
-    dublets[, new.prediction := ifelse(score>dublet.threshold, 1, 0)]
-
-    ## append info on duplets to Seurat meta.data
-    pre[["doublet_prediction"]] <- dublets[, new.prediction]
-    pre[["doublet_score"]] <- dublets[, score]
+        ## append info on duplets to Seurat meta.data
+        pre[["doublet_prediction"]] <- doublets[, new.prediction]
+    }
+    pre[["doublet_score"]] <- doublets[, score]
 
     ## save created Seurat object
     seurat.file <- file.path(this.sample.dir, "seurat.RDS")
@@ -691,6 +728,8 @@ create.seurat <- function(counts, this.sample, this.sample.dir, ensembl.dt) {
 #'             `sample.dir`, and potentially `file.type` for h5 files. Each row
 #'             should correspond to a sample with its directory path where the
 #'             data files are stored.
+#' @param true.cells Character vector with ids of true cells identified by
+#'        running empty drops algorythm.
 #' @param output.dir Full system path to the directory where merged Seurat file
 #'        will be saved.
 #'
@@ -718,7 +757,7 @@ create.seurat <- function(counts, this.sample, this.sample.dir, ensembl.dt) {
 #' @importFrom Seurat CreateSeuratObject merge
 #' @importFrom DropletUtils read10xCounts
 #' @importFrom rhdf5 Read10X_h5
-process.samples.and.merge <- function(meta, output.dir) {
+process.samples.and.merge <- function(meta, true.cells, output.dir) {
     ## read and return the Merged Seurat object if exists
     seurat.file <- file.path(output.dir, "merged.seurat.RDS")
     if (file.exists(seurat.file)) {
@@ -727,15 +766,27 @@ process.samples.and.merge <- function(meta, output.dir) {
         Merge <- readRDS(seurat.file)
         return(Merge)
     }
-
-    msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
-    msg(info, msg.txt)
-    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-    ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
-                                           "external_gene_name",
-                                           "external_synonym"),
-                              mart=ensembl))
-
+    
+    tryCatch({
+        msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
+        msg(info, msg.txt)
+        ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+        ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
+                                               "external_gene_name",
+                                               "external_synonym"),
+                                  mart=ensembl))
+    }, error = function(e) {
+        cat("Error requesting data: ", e$message, "\n")
+        msg(info, "loading from file")
+        ensembl.dt <- fread("ensemblgenes_latest.csv", select=1:2, 
+                            col.names=c("ensembl_gene_id", 
+                                        "external_gene_name"))
+        ## TODO: can't find this, needs fixing
+        ensembl.dt[, external_synonym := external_gene_name]
+        return(ensembl.dt)
+    })
+    # browser()
+      
     seurat.list <- list()
     all.samples <- meta[, unique(sample)]
 
@@ -753,25 +804,8 @@ process.samples.and.merge <- function(meta, output.dir) {
             msg.txt <- "Sample directory listed in metadata does not exist."
             stop(msg(error, msg.txt))
         }
-
-        ## Studies may have sample data in mtx or h5 format which are to be
-        ## read by read10xCounts and Read10X_h5 respectively.
-        ## Thus, we handle both cases here conditional on file types.
-        sample.files <- list.files(this.sample.dir)
-        if (any(grepl("mtx", sample.files))) {
-            pre <- read10xCounts(this.sample.dir, col.names=TRUE)
-            pre <- counts(pre)
-        } else if (any(grepl("h5", sample.files))) {
-            this.h5.file <- sample.files[grep("*.h5", sample.files)]
-            pre <- Read10X_h5(file.path(this.sample.dir, this.h5.file),
-                              use.names=TRUE, unique.features=TRUE)
-        } else {
-            msg.txt <- "Either .mtx or .h5 file should be present.
-            Check input directory."
-            stop(msg(error, msg.txt))
-        }
-
-        seurat.list[[this.sample]] <- create.seurat(pre, this.sample,
+        
+        seurat.list[[this.sample]] <- create.seurat(true.cells, this.sample,
                                                     this.sample.dir, ensembl.dt)
         msg(info, "Done.\n")
     }
@@ -833,6 +867,7 @@ update.seurat.meta.data <- function(seurat.obj) {
     seurat.obj@meta.data$nFeature_RNA <- n.features
 
     ## append mitochondrial RNA to Seurat meta.data object
+    ## Temporary!
     seurat.obj <- count.mt.genes(seurat.obj)
 
     ## compute log10 of the proportion of identified genes to counts of all
@@ -900,6 +935,7 @@ qc.seurat <- function(seurat.object, output.dir,
 
     meta.data <- setDT(seurat.object@meta.data)
     ## check cell barcodes against Seurat object
+    ## TODO: rewrite this function to apply to multiple samples
     if (!all(meta.data$barcodes %in% colnames(seurat.object))) {
         stop("Cells were not matched to Seurat object. Check barcodes.")
     }
@@ -1223,4 +1259,26 @@ filter.ensembl <- function(seurat.object) {
                        length(all.ensembl.ids))
     msg(info, msg.txt)
     seurat.object <- seurat.object[all.ensembl.ids, ]
+}
+
+#' Helper function to indentify doublets with scDblFinder
+find.doublets.scDblFinder <- function(sce, this.sample.dir) {
+    this.sce <- scDblFinder(sce)
+    doublet_scores <- this.sce$scDblFinder.score
+    doublet_classification <- this.sce$scDblFinder.class
+    doublet.dt <- data.table(prediction=doublet_classification, score=doublet_scores)
+    doublet.dt[, is.doublet := ifelse(prediction=="doublet", 1, 0)]
+    prediction.file <- file.path(this.sample.dir,
+                                 "scDblFinder_EDR0.008_PredictedDoublets.csv")
+    doublet.file <- file.path(this.sample.dir,
+                             "scDblFinder_EDR0.008_DoubletScores.csv")
+    fwrite(doublet.dt[, .(is.doublet)], file=prediction.file, col.names=FALSE)
+    fwrite(doublet.dt[, .(score)], file=doublet.file, col.names=FALSE)
+}
+
+## Function to remove samples names from barcodes
+remove.sample.from.barcode <- function(obj, del="_"){
+    re <- paste0(".*", del, "(.*)")
+    this.obj <- gsub(re, "\\1", obj)
+    return(this.obj)
 }

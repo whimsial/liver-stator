@@ -23,7 +23,9 @@
 #'        used by default (change this accordingly to where your R library)
 ## -----------------------------------------------------------------------------
 install.dependencies <- FALSE ## set to TRUE to install
-my.lib <- .libPaths()[[1]]
+## To ensure installation on the store rather in the personal folder
+my.lib <- "/exports/igmm/eddie/ponting-lab/sbraich2/Rlibrary"
+.libPaths(c(my.lib, .libPaths()))
 
 if (install.dependencies) source("dependencies.R")
 
@@ -36,10 +38,13 @@ library(HDF5Array)
 library(biomaRt)
 library(ggplot2)
 library(cowplot)
+library (scDblFinder)
+
 
 ## Preparation step.
 ## Set GEO ID, URLs, and study directories and file names.
 #'
+#' @param download.studies set downloading from GEO to TRUE/FALSE 
 #' @param root.dir Full path to large storage where the project data is to be
 #'        stored.
 #' @param working.dir Full path to the working directory (typically the cloned
@@ -53,82 +58,104 @@ library(cowplot)
 #' @param softfile.url URL pointing to the file on GEO FTP server which contains
 #'        sample metadata for the study.
 ## -----------------------------------------------------------------------------
-root.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev/liver"
-working.dir <- "/exports/igmm/eddie/khamseh-lab/aiakovliev/liver-stator"
-study.name <- "Ramachandran"
-geo.id <- "GSE136103"
-data.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/GSE136103_RAW.tar"
-filelist.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/filelist.txt"
-softfile.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/soft/GSE136103_family.soft.gz"
-study.dir <- file.path(root.dir, study.name)
-study.file <- file.path(study.dir, basename(data.url))
-filelist.file <- file.path(study.dir, basename(filelist.url))
-soft.file <- file.path(study.dir, basename(softfile.url))
-
-## GEO step. Download GEO dataset, extract and process files
-## (Skip if you have data already available)
-## -----------------------------------------------------------------------------
-## download specified GEO dataset
+download.studies <- FALSE
+root.dir <- "/exports/igmm/eddie/ponting-lab/ava/ME_CSF_Hifibio/raw_data/"
+working.dir <- "/exports/igmm/eddie/ponting-lab/sbraich2/liver-stator/"
+# ## Load helper functions
 source(file.path(working.dir, "rnaseq.functions.R"))
-download.study(study.name, study.file, data.url, filelist.file, filelist.url)
 
-## read and populate metadata
-meta.dt <- fread(filelist.file)
-meta.dt[, study.name := study.name]
-meta.dt <- meta.dt[, .(study=eval(study.name),
-                       geo.id=eval(geo.id),
-                       data.url=eval(data.url),
-                       filelist.url=eval(filelist.url),
-                       softfile.url=eval(softfile.url),
-                       study.dir=eval(study.dir),
-                       study.file=eval(study.file),
-                       filelist.file=eval(filelist.file),
-                       soft.file=eval(soft.file),
-                       sample.file=Name)]
-meta.dt[, sample := gsub("(GSM\\d+).*", "\\1", sample.file)]
-meta.dt[, sample.dir := file.path(study.dir, sample)]
-meta.dt <- meta.dt[!grep(".tar", sample)]
+## (Skip if you have data already available by setting download.studies <- FALSE)
+if(download.studies){
+    ## Here we keep example from liver Ramachandran et al. 2019
+    ## https://www.nature.com/articles/s41586-019-1631-3
+    study.name <- "Ramachandran"
+    geo.id <- "GSE136103"
+    data.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/GSE136103_RAW.tar"
+    filelist.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/suppl/filelist.txt"
+    softfile.url <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136103/soft/GSE136103_family.soft.gz"
+    study.dir <- file.path(root.dir, study.name)
+    study.file <- file.path(study.dir, basename(data.url))
+    filelist.file <- file.path(study.dir, basename(filelist.url))
+    soft.file <- file.path(study.dir, basename(softfile.url))
+    
+    download.study(study.name, study.file, data.url, filelist.file, filelist.url)
+    
+    ## GEO step. Download GEO dataset, extract and process files
+    ## -----------------------------------------------------------------------------
+    ## download specified GEO dataset
+    ## read and populate metadata
+    meta.dt <- fread(filelist.file)
+    meta.dt[, study.name := study.name]
+    meta.dt <- meta.dt[, .(study=eval(study.name),
+                           geo.id=eval(geo.id),
+                           data.url=eval(data.url),
+                           filelist.url=eval(filelist.url),
+                           softfile.url=eval(softfile.url),
+                           study.dir=eval(study.dir),
+                           study.file=eval(study.file),
+                           filelist.file=eval(filelist.file),
+                           soft.file=eval(soft.file),
+                           sample.file=Name)]
+    meta.dt[, sample := gsub("(GSM\\d+).*", "\\1", sample.file)]
+    meta.dt[, sample.dir := file.path(study.dir, sample)]
+    meta.dt <- meta.dt[!grep(".tar", sample)]
 
-## assign file types (mtx and h5 files are supported), if `sample.file` column
-## of `meta.dt` contains files with .mtx extension then use "mtx". Alternatively
-## use "h5"
-meta.dt[, file.type := "mtx"]
+    ## assign file types (mtx and h5 files are supported), if `sample.file` column
+    ## of `meta.dt` contains files with .mtx extension then use "mtx". Alternatively
+    ## use "h5"
+    meta.dt[, file.type := "mtx"]
 
-## for this example, we simplify things by using only 1 sample from the
-## liver atlas
-meta.dt <- meta.dt[sample=="GSM4041150"]
+    ## for this example, we simplify things by using only 1 sample from the
+    ## liver atlas
+    meta.dt <- meta.dt[sample=="GSM4041150"]
 
-## save metadata to a file
-meta.file <- file.path(root.dir, "metadata.txt")
-fwrite(meta.dt, file=meta.file, sep="\t")
+    ## save metadata to a file
+    meta.file <- file.path(root.dir, "metadata.txt")
+    fwrite(meta.dt, file=meta.file, sep="\t")
 
-## Extract files into respective subdirectories
-msg(bold, "Extracting downloaded archive")
-cmd <- sprintf("tar -xvf %s -C %s", study.file, study.dir)
-system(cmd)
+    ## Extract files into respective subdirectories
+    msg(bold, "Extracting downloaded archive")
+    cmd <- sprintf("tar -xvf %s -C %s", study.file, study.dir)
+    system(cmd)
 
-msg(bold, "Extracting sample files into subdirectories")
-for (idx in seq_len(nrow(meta.dt))) {
-    this.sample <- meta.dt[idx, sample]
-    msg.txt <- sprintf("Extracting sample %s", this.sample)
-    msg(info, msg.txt)
-    this.sample.dir <- meta.dt[sample==eval(this.sample), unique(sample.dir)]
-    this.archives <- meta.dt[sample==eval(this.sample),
-                             file.path(unique(study.dir), sample.file)]
-                             this.extracts <- extract.samples(this.archives,
-                                                              this.sample.dir)
-    meta.dt[sample==eval(this.sample), extract := this.extracts]
+    msg(bold, "Extracting sample files into subdirectories")
+    for (idx in seq_len(nrow(meta.dt))) {
+        this.sample <- meta.dt[idx, sample]
+        msg.txt <- sprintf("Extracting sample %s", this.sample)
+        msg(info, msg.txt)
+        this.sample.dir <- meta.dt[sample==eval(this.sample), unique(sample.dir)]
+        this.archives <- meta.dt[sample==eval(this.sample),
+                                 file.path(unique(study.dir), sample.file)]
+                                 this.extracts <- extract.samples(this.archives,
+                                                                  this.sample.dir)
+        meta.dt[sample==eval(this.sample), extract := this.extracts]
+    }
+    
+} else {
+    ## Select a sample of interest manually (.mtx,.tsv)
+    mtx.files <- c("barcodes.tsv", "features.tsv", "matrix.mtx")
+    this.extracts <- file.path(root.dir, 
+        "PLRC_HD055V2_fresh_PBMC_CD8_10xscGEX/outs/raw_feature_bc_matrix",
+        mtx.files)
+    this.sample.dir <- file.path(root.dir, 
+        "PLRC_HD055V2_fresh_PBMC_CD8_10xscGEX/outs/raw_feature_bc_matrix")
+        # ## h5 raw_feature_bc_matrix.h5
+        # this.sample.dir <- file.path(root.dir,
+        #     "PLRC_HD055V2_fresh_PBMC_CD8_10xscGEX/outs/")
+        # this.extracts <- file.path(root.dir,
+        #     "PLRC_HD055V2_fresh_PBMC_CD8_10xscGEX/outs/filtered_feature_bc_matrix.h5")
 }
 
 ## STEP 1. Read 10X data from sample files.
 #'
-#' @param this.extracts Full path to a triplet of files usually called
-#'        `barcodes.tsv`, `genes.tsv` and `matrix.mtx` which contain counts for
-#'         a given sample.
+#' @param mtx.files list of a triplet of file names usually
+#'        `barcodes.tsv`, `genes.tsv` (here `features.tsv`) and `matrix.mtx`
+#' @param this.extracts A list of full paths to mtx.files  which 
+#'         contain counts for a given sample.
 #' @param this.sample.dir Full path to the directory containing counts data for
 #'         a given sample.
 ## -----------------------------------------------------------------------------
-data <- read.10x.data(this.extracts, this.sample.dir)
+data <- read.10x.data(this.extracts, this.sample.dir, mtx.files)
 
 ## STEP 2. Detect empty drops in scRNA-seq data.
 #'
@@ -137,27 +164,51 @@ data <- read.10x.data(this.extracts, this.sample.dir)
 #' @param this.sample Sample ID whose counts data is in the `data` variable.
 ## -----------------------------------------------------------------------------
 msg(bold, "Removing empty drops")
+this.sample <- "HD055V2"
+## Save barcodes of true cells
 true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
                                 sample.barcodes=data$sample.barcodes$V1)
+                                
+## Remove sample names from the barcodes
+true.cells.ss <- remove.sample.from.barcode(true.cells)
+
+## Filter cells
+sce_filtered <- data$sce[, data$sce$Barcode %in% true.cells.ss]
 
 ## STEP 3. Detect doublets.
+## Here we have two options, the second one is recommended.
+## OPTION 1: scDblFinder
+## Use package scDblFinder https://f1000research.com/articles/10-979/v2 to filter
+## out doublets in the dataset
+## OPTION 2: scrublet
 ## First we run Jupyter notebook (`doublets.ipynb` in this repository) manually
 ## to work out suitable threshold and then run the python script for all samples
-#'
-#' @param dublet.threshold Numeric specifying the doublet cutoff. Default 0.15
+
+#' @param data$sce input data for scDblFinder is in SingleCellExperiment format
+#' @param doublet.threshold Numeric specifying the doublet cutoff. Default 0.15
 #'        seems to work quite well for several tested datasets.
 #' @param this.sample.dir Full path to the directory containing counts data for
 #'        a given sample.
 ## -----------------------------------------------------------------------------
-dublet.threshold <- 0.15
-this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
-
-## run python script `doublet.py` from R using system command
 msg(bold, "Detecting doublets")
-cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
-                --doublet_threshold %f", this.sample.dir, this.file.type,
-                dublet.threshold)
-system(cmd)
+## The flag to select the method, scDblFinder is default
+doublet.method.scDblFinder <- FALSE
+if (doublet.method.scDblFinder){
+    ## scDblFinder impelentation (DEFAULT)
+    find.doublets.scDblFinder(sce_filtered, this.sample.dir)
+} else {
+    ## scrublet impelentation
+    doublet.threshold <- 0.15
+    this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
+    
+    ## TODO: run srcublet on true cells only, now it runs on all cells
+    ## run python script `doublet.py` from R using system command
+    msg(bold, "Detecting doublets")
+    cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
+                    --doublet_threshold %f", this.sample.dir, this.file.type,
+                    doublet.threshold)
+    system(cmd)
+}
 
 ## STEP 4. Convert counts data for all sample to Seurat objects and then merge
 ## those objects together.
@@ -171,8 +222,13 @@ system(cmd)
 #'        stored.
 ## -----------------------------------------------------------------------------
 metadata <- meta.dt[, .(sample, sample.dir)]
+## TEST: create metadata with
+## metadata <- data.table(sample=this.sample, sample.dir=this.sample.dir)
 msg(bold, "Reading single cell data to Seurat and merging")
-seurat.all <- process.samples.and.merge(metadata, output.dir=root.dir)
+seurat.all <- process.samples.and.merge(metadata, true.cells, output.dir=root.dir)
+
+# Remove sample id from barcodes
+seurat.all@meta.data$barcodes <- remove.sample.from.barcode(seurat.all@meta.data$barcodes)
 
 ## STEP 5. Filter out genes/cells that do not pass QC thresholds
 #'

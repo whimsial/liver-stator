@@ -137,10 +137,11 @@ for (idx in seq_len(nrow(meta.dt))) {
                                         sample.barcodes=data$sample.barcodes$V1)
         cells <- c(cells, true.cells)
     }
-
+    ## Save true cells info the file
     ## perform QC step 2: detection of doublets
     ## first we run Jupyter notebook manually to work out suitable threshold
     ## and then run the python script for all samples
+    ## TODO: perform doublet detection on the filtered files
     this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
     cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
                    --doublet_threshold %f", this.sample.dir, this.file.type,
@@ -151,7 +152,7 @@ for (idx in seq_len(nrow(meta.dt))) {
 ## QC step 3: process all samples, convert to Seurat and merge
 ## -----------------------------------------------------------------------------
 msg(bold, "Reading single cell data to Seurat and merging")
-seurat.all <- process.samples.and.merge(meta.dt, output.dir=root.dir)
+seurat.all <- process.samples.and.merge(meta.dt, cells, output.dir=root.dir)
 
 ## QC step 4: filter out genes/cells that do not pass QC thresholds
 ## -----------------------------------------------------------------------------

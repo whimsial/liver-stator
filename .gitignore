@@ -87,3 +87,6 @@ rsconnect/
 # OS files
 .DS_Store
 ._.DS_Store
+
+# Virtual env
+rnaseq/
