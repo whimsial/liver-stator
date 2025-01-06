@@ -141,7 +141,6 @@ for (idx in seq_len(nrow(meta.dt))) {
     ## perform QC step 2: detection of doublets
     ## first we run Jupyter notebook manually to work out suitable threshold
     ## and then run the python script for all samples
-    ## TODO: perform doublet detection on the filtered files
     this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
     cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
                    --doublet_threshold %f", this.sample.dir, this.file.type,

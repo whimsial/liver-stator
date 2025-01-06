@@ -476,21 +476,17 @@ plot.variable.genes <- function(seurat.object, points, labels, output.file) {
 #' Count Mitochondrial Genes in scRNA-Seq data and append to Seurat object
 #'
 #' This function calculates the percentage of mitochondrial genes
-#' (based on gene symbols starting with "MT-" or "mt-" or by matching Ensembl
-#' IDs if no gene symbols match) and appends this as metadata to the Seurat
-#' object.
+#' by matching gene symbols in the Seurat object to the list of known
+#' mitochondrial genes downloaded from MitoCarta3.0
+#' https://www.broadinstitute.org/mitocarta/mitocarta30-inventory-mammalian-mitochondrial-proteins-and-pathways
+#' and available as Human.MitoCarta3.0.csv file in this repository.
 #'
 #' @param seurat.obj Seurat object containing single-cell RNA sequencing data.
+#' @param mt.file Full path to the file containing a list of mitochondrial genes.
+#'        By default, we use Human.MitoCarta3.0.csv from MitoCarta3.0.
 #'
 #' @return A modified Seurat object that includes a new metadata field `percent.mt`
 #'         which contains the percentage of mitochondrial gene expression per cell.
-#'
-#' @details The function first attempts to identify mitochondrial genes by looking
-#'          for gene names that start with "MT-" or "mt-". If no such genes are
-#'          found, it will then try to identify mitochondrial genes by their
-#'          Ensembl gene IDs, specifically those that are located on the
-#'          mitochondrial chromosome (MT). This involves querying the Ensembl
-#'          database using the `biomaRt` package.
 #'
 #' @examples
 #' \dontrun{
@@ -503,41 +499,53 @@ plot.variable.genes <- function(seurat.object, points, labels, output.file) {
 #' @importFrom Seurat PercentageFeatureSet
 #' @importFrom biomaRt useMart getBM
 #' @importFrom data.table setDT
-count.mt.genes <- function(seurat.obj) {
+count.mt.genes <- function(seurat.obj, mt.file="Human.MitoCarta3.0.csv") {
     require(Seurat)
-    ## if MT- cannot be matched in gene names, then try excluding MT genes which
-    ## are matched by Ensembl id
-    found.mt <- PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")
-    tryCatch({
-        msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
-        msg(info, msg.txt)
-        ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-        ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
-                                               "external_gene_name",
-                                               "external_synonym"),
-                                  mart=ensembl))
-    }, error = function(e) {
-        cat("Error requesting data: ", e$message, "\n")
-        msg(info, "loading from file")
-        ensembl.dt <- fread("ensemblgenes_latest.csv", select=1:2, 
-                            col.names=c("ensembl_gene_id", 
-                                        "external_gene_name"))
-        ## TODO: can't find this, needs fixing
-        ensembl.dt[, external_synonym := external_gene_name]
-    })
+    ## Calculate percentage of mitohondrial genes
+    ## Read mitohondrila genes from the list
+    mt.dt <- fread(mt.file, select=c("Symbol", "EnsemblGeneID_mapping_version_20200130"), 
+                   col.names=c("gene_symbol", "gene_id"))
+    mt.dt <- mt.dt[gene_symbol != "" & gene_id != ""]
+    symbols <- mt.dt[, gene_symbol]
+    mt.symbols <- symbols[symbols %in% rownames(seurat.obj@assays$RNA@counts)]
+    found.mt <- PercentageFeatureSet(seurat.obj, features=mt.symbols)
     
-    mt.genes <- ensembl.dt[grep("^MT", external_gene_name)]
-    all.genes <- rownames(seurat.obj)
-    genes <- mt.genes[external_gene_name %in% all.genes, 
-                      external_gene_name]
-    if (length(genes) > 0) {
-        matched.mt <- PercentageFeatureSet(seurat.obj, features=genes)
-        all.mt <- found.mt + matched.mt
-    } else {
-        all.mt <- found.mt
+    ##TODO: This is to be removed
+    if (FALSE) {
+        ## if MT- cannot be matched in gene names, then try excluding MT genes which
+        ## are matched by Ensembl id
+        found.mt <- PercentageFeatureSet(seurat.obj, pattern="^MT-|^mt-")
+        tryCatch({
+            msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
+            msg(info, msg.txt)
+            ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+            ensembl.dt <- setDT(getBM(attributes=c("ensembl_gene_id",
+                                                   "external_gene_name",
+                                                   "external_synonym"),
+                                      mart=ensembl))
+        }, error = function(e) {
+            cat("Error requesting data: ", e$message, "\n")
+            msg(info, "loading from file")
+            ensembl.dt <- fread("ensemblgenes_latest.csv", select=1:2, 
+                                col.names=c("ensembl_gene_id", 
+                                            "external_gene_name"))
+            ## TODO: can't find this, needs fixing
+            ensembl.dt[, external_synonym := external_gene_name]
+        })
+    
+        mt.genes <- ensembl.dt[grep("^MT-", external_gene_name)]
+        all.genes <- rownames(seurat.obj)
+        genes <- mt.genes[external_gene_name %in% all.genes, 
+                          external_gene_name]
+        if (length(genes) > 0) {
+            matched.mt <- PercentageFeatureSet(seurat.obj, features=genes)
+            all.mt <- found.mt + matched.mt
+        } else {
+            all.mt <- found.mt
+        }
     }
 
-    seurat.obj[["percent.mt"]] <- all.mt
+    seurat.obj[["percent.mt"]] <- found.mt
 
     return(seurat.obj)
 }
@@ -580,8 +588,8 @@ count.mt.genes <- function(seurat.obj) {
 #' @importFrom ggplot2 ggplot, geom_violin, geom_jitter, geom_point, labs, theme_minimal
 #' @importFrom cowplot plot_grid
 #' @importFrom ggplot2 ggsave
-create.seurat <- function(true.cells, this.sample, this.sample.dir, ensembl.dt, 
-                          doublet.method.scDblFinder=TRUE) {
+create.seurat <- function(this.sample, this.sample.dir, ensembl.dt, 
+                          doublet.method.scDblFinder) {
     ## Studies may have sample data in mtx or h5 format which are to be
     ## read by read10xCounts and Read10X_h5 respectively.
     ## Thus, we handle both cases here conditional on file types.
@@ -599,8 +607,14 @@ create.seurat <- function(true.cells, this.sample, this.sample.dir, ensembl.dt,
         stop(msg(error, msg.txt))
     }
     ## filter 10x counts to keep only true cells
-    this.true.cells <- remove.sample.from.barcode(true.cells)
-    pre <- pre[, colnames(pre) %in% this.true.cells]
+    # this.true.cells <- remove.sample.from.barcode(true.cells)
+    updated.barcodes <- paste0(this.sample, "_", colnames(pre))
+    colnames(pre) <- updated.barcodes
+    true.cells <- fread(file.path(this.sample.dir, "true_cells.csv"), 
+                        header=FALSE,
+                        col.names="barcode")
+    true.cells[, barcode := paste0(this.sample, "_", barcode)]
+    pre <- pre[, colnames(pre) %in% true.cells$barcode]
     ## Create Seurat object with filtered counts
     pre <- CreateSeuratObject(counts=pre, project=this.sample)
 
@@ -618,7 +632,21 @@ create.seurat <- function(true.cells, this.sample, this.sample.dir, ensembl.dt,
                        transcripts[gene.symbol=="", .N])
     msg(info, msg.txt)
     msg(info, "Using default study identifiers for these.")
-    transcripts[gene.symbol=="" | gene.symbol=="NA", gene.symbol := transcript]
+    transcripts[gene.symbol=="" | gene.symbol=="NA", 
+                gene.symbol := transcript]
+
+    if (transcripts[duplicated(gene.symbol), .N]>0) {
+        msg.txt <- sprintf("%s duplicated mappings to Ensembl found",
+                           transcripts[duplicated(gene.symbol), .N])
+        msg(warn, msg.txt)
+        msg.txt <- "Dropping all duplicated genes"
+        msg(warn, msg.txt)
+        
+        transcripts.unique <- transcripts[, .N, by="gene.symbol"][N==1]
+        transcripts <- transcripts[transcripts.unique, on="gene.symbol", 
+                                   nomatch=NULL]
+        pre <- pre[transcripts$transcript, ]
+    }
 
     rownames(pre[["RNA"]]@counts) <- transcripts$gene.symbol
     rownames(pre[["RNA"]]@data) <- transcripts$gene.symbol
@@ -626,7 +654,7 @@ create.seurat <- function(true.cells, this.sample, this.sample.dir, ensembl.dt,
 
     msg(info, "Processing Seurat meta.data.")
     ## pass SC index as <sample_id>_<barcode>
-    pre$barcodes <- true.cells
+    pre$barcodes <- true.cells$barcode
     pre$sample <- this.sample
     pre$orig.ident <- this.sample
 
@@ -757,7 +785,8 @@ create.seurat <- function(true.cells, this.sample, this.sample.dir, ensembl.dt,
 #' @importFrom Seurat CreateSeuratObject merge
 #' @importFrom DropletUtils read10xCounts
 #' @importFrom rhdf5 Read10X_h5
-process.samples.and.merge <- function(meta, true.cells, output.dir) {
+process.samples.and.merge <- function(meta, output.dir, 
+                                      doublet.method.scDblFinder=TRUE) {
     ## read and return the Merged Seurat object if exists
     seurat.file <- file.path(output.dir, "merged.seurat.RDS")
     if (file.exists(seurat.file)) {
@@ -784,31 +813,33 @@ process.samples.and.merge <- function(meta, true.cells, output.dir) {
         ## TODO: can't find this, needs fixing
         ensembl.dt[, external_synonym := external_gene_name]
         return(ensembl.dt)
-    })
-    # browser()
-      
+    })      
     seurat.list <- list()
-    all.samples <- meta[, unique(sample)]
+    all.sample.dirs <- meta[, unique(sample.dir)]
 
     ## Loop through samples and create Seurat objects
-    for (this.sample in all.samples) {
-        this.meta <- meta[sample == eval(this.sample)][1]
-        msg.txt <- sprintf("Processing sample: %s, %s of %s samples...",
-                           this.sample,
-                           which(all.samples==this.sample),
-                           length(all.samples))
+    # all.samples <- NULL
+    for (this.sample.dir in all.sample.dirs) {
+        this.meta <- meta[sample.dir == eval(this.sample.dir)][1]
+        this.sample <- this.meta[, sample]
+        msg.txt <- sprintf("Processing sample dir: %s, %s of %s dirs...",
+                           this.sample.dir,
+                           which(all.sample.dirs==this.sample.dir),
+                           length(all.sample.dirs))
         msg(info, msg.txt)
 
-        this.sample.dir <- this.meta[, sample.dir]
         if (!dir.exists(this.sample.dir)) {
             msg.txt <- "Sample directory listed in metadata does not exist."
             stop(msg(error, msg.txt))
         }
         
-        seurat.list[[this.sample]] <- create.seurat(true.cells, this.sample,
-                                                    this.sample.dir, ensembl.dt)
+        seurat.list[[this.sample.dir]] <- create.seurat(this.sample,
+                                                        this.sample.dir, ensembl.dt, 
+                                                        doublet.method.scDblFinder)
         msg(info, "Done.\n")
+        # all.samples <- c(all.samples, this.sample)
     }
+    all.samples <- basename(dirname(dirname(all.sample.dirs)))
 
     ## Merge all Seurat objects into one
     if (length(seurat.list) > 1) {
@@ -932,10 +963,8 @@ qc.seurat <- function(seurat.object, output.dir,
 
     ## ensure the meta.data is up-to-date
     seurat.object <- update.seurat.meta.data(seurat.object)
-
     meta.data <- setDT(seurat.object@meta.data)
     ## check cell barcodes against Seurat object
-    ## TODO: rewrite this function to apply to multiple samples
     if (!all(meta.data$barcodes %in% colnames(seurat.object))) {
         stop("Cells were not matched to Seurat object. Check barcodes.")
     }
@@ -964,19 +993,25 @@ qc.seurat <- function(seurat.object, output.dir,
                        meta.data[eval(qc.expr), .N],
                        meta.data[eval(qc.expr), uniqueN(sample)])
     msg(info, msg.txt)
-
+    
     cells.to.keep <- meta.data[qc.fail==FALSE, barcodes]
     msg.txt <- sprintf("Keep %s cells after all filtering steps",
                        length(cells.to.keep))
     msg(info, msg.txt)
-
     ## filter genes based on how many cells are they expressed in
     counts <- GetAssayData(object=seurat.object, slot="counts")
-    ## infer lowly expressed genes on a subset of cell that we keep
+    ## infer lowly expressed genes on a subset of cells that we keep
+
     counts <- counts[, cells.to.keep, drop=FALSE]
     nonzero.counts <- counts > 0
     genes.expressed <- Matrix::rowSums(nonzero.counts) >= n.cells
-    genes.to.keep <- names(genes.expressed[genes.expressed])
+    genes.dt <- data.table(gene.symbol=names(genes.expressed), 
+                           expressed=genes.expressed)
+    ## Remove duplicate gene symbols
+    genes.unique <- genes.dt[, .N, by="gene.symbol"][N==1]
+    genes.dt <- genes.dt[genes.unique, on="gene.symbol", 
+                         nomatch=NULL]
+    genes.to.keep <- genes.dt[expressed==TRUE, gene.symbol]
 
     msg.txt <- sprintf("Keep %s genes which are expressed in >%s cells.",
                        length(genes.to.keep), n.cells)
@@ -1159,12 +1194,12 @@ cluster.cells <- function(seurat.object, cell.map, output.dir) {
 
 sample.seurat <- function(seurat.object, output.dir, cell.map, n.cells.keep) {
     ## map cell counts to samples
-    cell.counts <- as.data.table(table(Idents(seurat.object)))
+    cell.counts <- as.data.table(table(seurat.object@meta.data$orig.ident))
     setnames(cell.counts, old=c("V1", "N"), new=c("sample", "cell.count"))
 
     ## join with cell.map to bring in conditions
-    cell.map <- cell.map[cell.counts, on="sample"]
-    cell.map[, cell.count.by.condition := .N, by=condition]
+    cell.map[cell.counts, on="sample", cell.count:=cell.count]
+    cell.map[, cell.count.by.condition := sum(cell.count), by=condition]
 
     msg.txt <- "Cells in Seurat object were mapped to the following conditions."
     msg(info, msg.txt)
@@ -1172,15 +1207,15 @@ sample.seurat <- function(seurat.object, output.dir, cell.map, n.cells.keep) {
 
     ## sample size for each condition to ensure equal representation in the
     ## final sample
-    min.cells <- cell.map[, n.cells.keep / uniqueN(condition)]
+    min.cells <- floor(cell.map[, n.cells.keep / uniqueN(condition)])
     cell.map[, sample.size := ifelse(cell.count.by.condition < min.cells,
                                      cell.count.by.condition, min.cells)]
 
     ## randomly sample cells ensuring proportional representation of samples
     msg.txt <- sprintf("Sampling %s cells from each of %s conditions.",
-                       min.cells, n.cells.keep)
+                       min.cells, cell.map[, uniqueN(condition)])
     msg(info, msg.txt)
-    msg.txt <- sprintf("Default sample: %s cells, smallest sample: %s cells",
+    msg.txt <- sprintf("Selected sample: %s cells, smallest sample: %s cells",
                        min.cells,
                        cell.map[, min(cell.count.by.condition)])
     msg(info, msg.txt)
@@ -1189,23 +1224,26 @@ sample.seurat <- function(seurat.object, output.dir, cell.map, n.cells.keep) {
                        n.cells.keep)
     msg(info, msg.txt)
 
+    metadata <- setDT(seurat.object@meta.data)
     cells.to.keep <- NULL
     for (this.condition in cell.map[, unique(condition)]) {
         this.cell.map <- cell.map[condition==eval(this.condition)]
-        this.sample <- this.cell.map[, sample(barcode, size=unique(sample.size),
-                                              replace=FALSE)]
+        this.metadata <- metadata[orig.ident %in% this.cell.map$sample]
+        this.sample <- this.metadata[, 
+            sample(barcodes, 
+                   size=this.cell.map[, unique(sample.size)],
+                   replace=FALSE)]
         cells.to.keep <- c(cells.to.keep, this.sample)
     }
 
     ## subset Seurat object
-    dt <- setDT(seurat.object@meta.data)
     seurat.object.filtered <- seurat.object[, cells.to.keep]
-    dt <- dt[match(colnames(seurat.object.filtered), barcodes)]
+    metadata <- metadata[match(colnames(seurat.object.filtered), barcodes)]
 
-    if (!dt[, identical(barcodes, colnames(seurat.object.filtered))])
+    if (!metadata[, identical(barcodes, colnames(seurat.object.filtered))])
         stop(msg(error, "Barcodes in counts matrix do not match meta.data."))
 
-    seurat.object.filtered@meta.data <- setDF(dt)
+    seurat.object.filtered@meta.data <- setDF(metadata)
 
     seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
 

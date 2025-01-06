@@ -4,6 +4,7 @@
 import scanpy as sc
 import scrublet as scr
 import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
 import os
 import argparse
@@ -54,6 +55,15 @@ if args.data_type=="h5":
     counts_matrix = sc.read_10x_h5(sample_file)
 else:
     counts_matrix = sc.read_10x_mtx(s, var_names='gene_symbols', cache=True)
+    
+
+print('Counts matrix shape: {} rows, {} columns'.format(counts_matrix.shape[0], counts_matrix.shape[1]))
+# Filter out empty droplets
+target_barcodes = pd.read_csv(os.path.join(s, 'true_cells.csv'), header=None, names=['barcode'])
+print(target_barcodes.head())
+# print(counts_matrix.obs_names)
+counts_matrix = counts_matrix[counts_matrix.obs_names.isin(target_barcodes['barcode']), :]
+print('Counts matrix shape: {} rows, {} columns'.format(counts_matrix.shape[0], counts_matrix.shape[1]))
 
 ## doublet rates in 1000 cells normally ~0.8% per 1k cells
 edr = 0.008

@@ -172,7 +172,14 @@ true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
 ## Remove sample names from the barcodes
 true.cells.ss <- remove.sample.from.barcode(true.cells)
 
-## Filter cells
+
+## Save barcodes of the true cells for Scrublet
+true.cells.dt <- data.table(true.cells=true.cells.ss)
+true.cells.file <- file.path(this.sample.dir,
+                             "true_cells.csv")
+fwrite(true.cells.dt, file=true.cells.file, col.names=FALSE)
+
+## Filter cells to pass directly to scDblFinder
 sce_filtered <- data$sce[, data$sce$Barcode %in% true.cells.ss]
 
 ## STEP 3. Detect doublets.
@@ -199,7 +206,11 @@ if (doublet.method.scDblFinder){
 } else {
     ## scrublet impelentation
     doublet.threshold <- 0.15
-    this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
+    if(download.studies){
+        this.file.type <- meta.dt[sample==eval(this.sample), unique(file.type)]
+    } else {
+        this.file.type <- ".mtx"
+    }
     
     ## TODO: run srcublet on true cells only, now it runs on all cells
     ## run python script `doublet.py` from R using system command
@@ -221,14 +232,13 @@ if (doublet.method.scDblFinder){
 #' @param root.dir Full path to large storage where the project data is to be
 #'        stored.
 ## -----------------------------------------------------------------------------
-metadata <- meta.dt[, .(sample, sample.dir)]
-## TEST: create metadata with
-## metadata <- data.table(sample=this.sample, sample.dir=this.sample.dir)
+if(download.studies){
+    metadata <- meta.dt[, .(sample, sample.dir)]
+} else {
+    metadata <- data.table(sample=this.sample, sample.dir=this.sample.dir)
+}
 msg(bold, "Reading single cell data to Seurat and merging")
-seurat.all <- process.samples.and.merge(metadata, true.cells, output.dir=root.dir)
-
-# Remove sample id from barcodes
-seurat.all@meta.data$barcodes <- remove.sample.from.barcode(seurat.all@meta.data$barcodes)
+seurat.all <- process.samples.and.merge(metadata, output.dir=root.dir)
 
 ## STEP 5. Filter out genes/cells that do not pass QC thresholds
 #'
@@ -247,7 +257,11 @@ seurat.qc <- qc.seurat(seurat.all, output.dir=root.dir)
 #'        identifier), `condition` (e.g., "healthy", "disease")
 #' @param n.cells.keep Integer specifying the number of cells to be sampled.
 ## -----------------------------------------------------------------------------
-cell.map <- data.table(sample="GSM4041150", condition="healthy")
+if(download.studies){
+    cell.map <- data.table(sample="GSM4041150", condition="healthy")
+}else{
+    cell.map <- data.table(sample=eval(this.sample), condition="me")
+}
 n.cells.keep <- 5000
 
 msg(bold, "Sampling cells")
