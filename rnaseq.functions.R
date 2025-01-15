@@ -607,7 +607,7 @@ create.seurat <- function(this.sample, this.sample.dir, ensembl.dt,
         stop(msg(error, msg.txt))
     }
     ## filter 10x counts to keep only true cells
-    # this.true.cells <- remove.sample.from.barcode(true.cells)
+    ## Add sample names to the barcodes
     updated.barcodes <- paste0(this.sample, "_", colnames(pre))
     colnames(pre) <- updated.barcodes
     true.cells <- fread(file.path(this.sample.dir, "true_cells.csv"), 
@@ -620,7 +620,6 @@ create.seurat <- function(this.sample, this.sample.dir, ensembl.dt,
 
     msg.txt <- sprintf("Mapping transcripts to official gene symbols")
     msg(info, msg.txt)
-
     transcripts <- data.table(transcript=rownames(pre), gene.symbol="NA")
     transcripts[ensembl.dt, on=c(transcript="external_synonym"),
                 gene.symbol := external_synonym]
@@ -634,7 +633,8 @@ create.seurat <- function(this.sample, this.sample.dir, ensembl.dt,
     msg(info, "Using default study identifiers for these.")
     transcripts[gene.symbol=="" | gene.symbol=="NA", 
                 gene.symbol := transcript]
-
+    ## Remove duplicated genes from the object as they may cause confusion 
+    ## in the future
     if (transcripts[duplicated(gene.symbol), .N]>0) {
         msg.txt <- sprintf("%s duplicated mappings to Ensembl found",
                            transcripts[duplicated(gene.symbol), .N])
@@ -795,8 +795,7 @@ process.samples.and.merge <- function(meta, output.dir,
         Merge <- readRDS(seurat.file)
         return(Merge)
     }
-    
-    tryCatch({
+    ensembl.dt <- tryCatch({
         msg.txt <- "Requesting gene identifiers from Ensembl to map gene names"
         msg(info, msg.txt)
         ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
@@ -808,11 +807,11 @@ process.samples.and.merge <- function(meta, output.dir,
         cat("Error requesting data: ", e$message, "\n")
         msg(info, "loading from file")
         ensembl.dt <- fread("ensemblgenes_latest.csv", select=1:2, 
-                            col.names=c("ensembl_gene_id", 
-                                        "external_gene_name"))
+                            col.names=c("geneid", "gene_symbol"))
+        setnames(ensembl.dt, c(1, 2), c("ensembl_gene_id", "external_gene_name"))
         ## TODO: can't find this, needs fixing
         ensembl.dt[, external_synonym := external_gene_name]
-        return(ensembl.dt)
+        # return(ensembl.dt)
     })      
     seurat.list <- list()
     all.sample.dirs <- meta[, unique(sample.dir)]
@@ -1316,7 +1315,7 @@ find.doublets.scDblFinder <- function(sce, this.sample.dir) {
 
 ## Function to remove samples names from barcodes
 remove.sample.from.barcode <- function(obj, del="_"){
-    re <- paste0(".*", del, "(.*)")
+    re <- paste0(".*_(.*-\\d+)$")
     this.obj <- gsub(re, "\\1", obj)
     return(this.obj)
 }

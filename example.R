@@ -1,8 +1,13 @@
-## Example R script to download, process and QC scRNA-seq data from GEO.
+## Example R script that combines two approaches 
+## 1. download, process and QC scRNA-seq data from GEO (selected single sample).
 ## This simplified script assumes that the data comes from a single study
 ## and there are no major inconsistencies between sample in terms of
-## experimental protocols. If you need to perform data integration from studies
-## with different protocols, refer to `pipeline.R`.
+## experimental protocols. 
+## 2. Load a single sample from HiFiBio dataset (available localy).
+##
+## This example shows on how to QC and prepare data to run Stator.
+## If you need to perform data integration from studies
+## with different protocols, refer to `pipeline.R` or `pipeline.me.R`.
 ## -----------------------------------------------------------------------------
 
 ## Install required dependencies on HPC.
@@ -164,12 +169,12 @@ data <- read.10x.data(this.extracts, this.sample.dir, mtx.files)
 #' @param this.sample Sample ID whose counts data is in the `data` variable.
 ## -----------------------------------------------------------------------------
 msg(bold, "Removing empty drops")
-this.sample <- "HD055V2"
+this.sample <- paste0(basename(dirname(dirname(this.sample.dir))))
 ## Save barcodes of true cells
 true.cells <- remove.emptydrops(sce=data$sce, sample=this.sample,
                                 sample.barcodes=data$sample.barcodes$V1)
                                 
-## Remove sample names from the barcodes
+## Remove sample names from the barcodes to use it as input to scrublet
 true.cells.ss <- remove.sample.from.barcode(true.cells)
 
 
@@ -211,8 +216,6 @@ if (doublet.method.scDblFinder){
     } else {
         this.file.type <- ".mtx"
     }
-    
-    ## TODO: run srcublet on true cells only, now it runs on all cells
     ## run python script `doublet.py` from R using system command
     msg(bold, "Detecting doublets")
     cmd <- sprintf("python3 doublet.py --sample_dir %s --data_type %s \\
@@ -238,7 +241,8 @@ if(download.studies){
     metadata <- data.table(sample=this.sample, sample.dir=this.sample.dir)
 }
 msg(bold, "Reading single cell data to Seurat and merging")
-seurat.all <- process.samples.and.merge(metadata, output.dir=root.dir)
+seurat.all <- process.samples.and.merge(metadata, output.dir=root.dir, 
+                                        doublet.method.scDblFinder=doublet.method.scDblFinder)
 
 ## STEP 5. Filter out genes/cells that do not pass QC thresholds
 #'
@@ -275,6 +279,7 @@ seurat.for.stator <- qc.seurat(seurat.for.stator, output.dir=root.dir)
 #'
 #' @param seurat.for.stator Seurat object from the previous step.
 ## -----------------------------------------------------------------------------
+## TODO: fix this if ensembl connection is broken
 seurat.for.stator <- process.variable.genes(seurat.for.stator,
                                             output.dir=root.dir)
 hvg <- seurat.for.stator@assays$RNA@var.features

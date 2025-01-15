@@ -198,3 +198,23 @@ for (this.run in 1:length(all.runs)){
               row.names=TRUE, col.names=TRUE)
     gc()
 }
+
+## Read clontypes data
+clonotypes.raw <- fread(file.path(working.dir, "MECFS001_PBMC_TCRs_all_contig_annotations.csv"), 
+                    header=TRUE)
+clonotypes.cell <- clonotypes.raw[clonotypes.raw[,is_cell==TRUE]]
+clonotypes.filtered <- clonotypes.cell[clonotypes.cell[,raw_clonotype_id!=""]]
+
+## Write metadata into csv
+for (this.run in 1:length(all.runs)){
+    this.seurat <- all.runs[[this.run]]
+    this.dt <- data.table(sample=this.seurat$orig.ident, barcode=colnames(this.seurat))
+    this.dt[, celltype := gsub(".*(_All_|_CD8_|_CD8CD4_|_CD4CD8_).*", "\\1", barcode)]
+    this.dt[celltype=="_CD8CD4_", celltype := "_CD4CD8_"]
+    this.merge <- this.dt[cell.map, on="sample", nomatch=NULL]
+    this.export <- this.merge[,.(barcode, condition, celltype)]
+    setnames(this.export, c(1, 2, 3), c(" ", "Cell.State", "Cell.Types"))
+    metadata.file <- file.path(root.dir, sprintf("%s.metadata.csv", this.run))
+    write.table(this.export, file=metadata.file, sep = ",", quote=FALSE,
+              row.names=FALSE, col.names=TRUE)
+    }
