@@ -814,6 +814,8 @@ process.samples.and.merge <- function(meta, output.dir,
         # return(ensembl.dt)
     })      
     seurat.list <- list()
+    ## TODO: we can revert it to reading samples only 
+    ## if we pass appropriate sample names
     all.sample.dirs <- meta[, unique(sample.dir)]
 
     ## Loop through samples and create Seurat objects
@@ -1093,13 +1095,35 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     seurat.object <- FindVariableFeatures(seurat.object, selection.method="vst",
                                           nfeatures=1000)
 
-    ## connect to Ensembl via BioMart
-    ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-
     ## obtain top variable genes
     msg.txt <- sprintf("Selected %s most variable genes", n.top.variable.genes)
     msg(info, msg.txt)
-
+    # ## Get list of the top variable genes
+#     top.variable.genes.list <- head(VariableFeatures(seurat.object),
+#                                n.top.variable.genes)
+#     ##TODO: make sure ensembl.ids is in the right format when we import ensebl from the file
+#     ensembl.ids <- tryCatch({
+#         ## Create data.table with the top variable genes
+#         top.variable.genes <- data.table(gene.id=top.variable.genes.list,
+#                                          gene.symbol=top.variable.genes.list)
+#         msg.txt <- "Requesting gene identifiers from Ensembl to select top variable genes"
+#         ## map gene IDs to Ensembl, depending on the format
+#         ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+#          ## map gene IDs to Ensembl, depending on the format
+#         top.variable.genes <- map.ensembl(top.variable.genes, ensembl)
+#         ensembl.ids <- top.variable.genes[grep("ENSG", gene.id)]
+#     }, error = function(e) {
+#         ## Create data.table with the top variable genes
+#         top.variable.genes <- data.table(gene_symbol=top.variable.genes.list)
+#         cat("Error requesting data from ensembl: ", e$message, "\n")
+#         msg(info, "loading from file")
+#         ensembl.dt <- fread("ensemblgenes_latest.csv", select=1:2,
+#                             col.names=c("geneid", "gene_symbol"))
+#         top.variable.genes <- top.variable.genes[ensembl.dt, on="gene_symbol", nomatch=NULL]
+#         setnames(top.variable.genes, old = "gene_symbol", new = "gene.symbol")
+#         setnames(top.variable.genes, old = "geneid", new = "gene.id")
+#         ensembl.ids <- top.variable.genes[grep("ENSG", gene.id)]
+#     })
     top.variable.genes <- head(VariableFeatures(seurat.object),
                                n.top.variable.genes)
     top.variable.genes <- data.table(gene.id=top.variable.genes,
@@ -1108,7 +1132,6 @@ process.variable.genes <- function(seurat.object, output.dir, core.genes=NULL,
     ## map gene IDs to Ensembl, depending on the format
     top.variable.genes <- map.ensembl(top.variable.genes, ensembl)
     ensembl.ids <- top.variable.genes[grep("ENSG", gene.id)]
-
     msg.txt <- sprintf("%s most variable genes mapped to Ensembl",
                        n.top.variable.genes)
     msg(info, msg.txt)
