@@ -290,6 +290,7 @@ if(add.clonotypes){
     all.data.clonotypes <- rbindlist(all.list.clonotypes)
 }
 ## Write metadata into csv
+all.metadata <- data.table()
 for (this.run in cell.map[, unique(run)]){
     seurat.file <- file.path(root.dir, 
                                sprintf("%s.seurat.for.stator.RDS", this.run))
@@ -307,7 +308,7 @@ for (this.run in cell.map[, unique(run)]){
     this.export <- this.merge[,.(barcode, condition, celltype)]
     if(add.clonotypes){
         ## Read clontypes data
-        metadata.file <- file.path(root.dir, sprintf("%s.metadata.clonotypes.csv", this.run))
+        metadata.file <- file.path(root.dir, sprintf("%s.metadata.clonotypes.All.csv", this.run))
         ## Cellmap for each run
         this.cell.map <- cell.map[run==eval(this.run)]
         ## Selected samples
@@ -328,14 +329,31 @@ for (this.run in cell.map[, unique(run)]){
                 selected.clonotypes <- select.clonotypes(selected.clonotypes, this.cell.map, this.pattern)
             }
         }
-    selected.clonotypes <- selected.clonotypes[full.barcode:=paste0()]
     ## Filter out clonotypes with less than 30 umis
-    filtered.colontypes <- selected.clonotypes[selected.clonotypes[,umis>30]]
-    data.clonotypes[" ":= ]
+    # filtered.colontypes <- selected.clonotypes[selected.clonotypes[,umis>25]]
+    filtered.colontypes <- selected.clonotypes
+    filtered.colontypes <- filtered.colontypes[!duplicated(barcode) & !duplicated(barcode, fromLast = TRUE)]
+    filtered.colontypes[,barcode:=paste0(sample, "_", barcode)]
+    new.export <- this.export[filtered.colontypes, on="barcode", nomatch=NULL, .(barcode,condition, celltype, raw_clonotype_id)]
+    new.export[,celltype:=paste0(celltype, raw_clonotype_id)]
+    new.export[,raw_clonotype_id:=NULL]
+    this.export[barcode %in% new.export$barcode, celltype:=new.export$celltype]
+    this.export[,run:=eval(this.run)]
+    all.metadata <- rbind(all.metadata, this.export)
+    this.export[,run:=NULL]
     } else {
         metadata.file <- file.path(root.dir, sprintf("%s.metadata.csv", this.run))
     }
     setnames(this.export, c(1, 2, 3), c(" ", "Cell.State", "Cell.Types"))
     write.table(this.export, file=metadata.file, sep = ",", quote=FALSE,
               row.names=FALSE, col.names=TRUE)
-    }
+}
+intersect(all.metadata[run==1]$celltype, all.metadata[run==2]$celltype)
+intersect(all.metadata[run==1]$celltype, all.metadata[run==3]$celltype)
+intersect(all.metadata[run==1]$celltype, all.metadata[run==4]$celltype)
+intersect(all.metadata[run==2]$celltype, all.metadata[run==3]$celltype)
+intersect(all.metadata[run==2]$celltype, all.metadata[run==4]$celltype)
+intersect(all.metadata[run==3]$celltype, all.metadata[run==4]$celltype)
+intersect(all.metadata[run==1]$celltype, intersect(all.metadata[run==2]$celltype,all.metadata[run==3]$celltype))
+intersect(all.metadata[run==1]$celltype, intersect(all.metadata[run==2]$celltype,intersect(all.metadata[run==3]$celltype, all.metadata[run==4]$celltype)))
+all.metadata[, unique(celltype)]
