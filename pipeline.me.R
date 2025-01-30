@@ -68,7 +68,7 @@ source(file.path(working.dir, "rnaseq.functions.R"))
 ## Reading and unzipping step. Select samples, extract and process files
 ## -----------------------------------------------------------------------------
 ## Selected samples(ME samples: MECFS001 - no CD8CD4, HD015v3 - broken data for CD8CD4)
-map <- data.table(sample=c("HD0069V1", "HD066V1", "D044", "D085", 
+map <- data.table(sample=c("HD066V1", "HD0069V1", "D044", "D085", 
                                   "HD055V2", "HD053V1", "HD010V2", "HD015v3", 
                                   "HD034V2", "HD033V1", "LCOVID001", "FSDD817V2"), 
                          condition=c("healthy", "healthy", "healthy", "healthy", 
@@ -248,6 +248,8 @@ genes.file <- file.path(root.dir, "genes.csv")
 write.table(hvg, file=genes.file, sep=",", quote=FALSE,
             col.names=FALSE, row.names=FALSE)
             
+## Separate data in ME or LC condition, NULL for all data
+separate.data <- "me"
 ## Process the data for Stator
 for (this.run in cell.map[, unique(run)]){
     seurat.file <- file.path(root.dir, 
@@ -259,6 +261,17 @@ for (this.run in cell.map[, unique(run)]){
     } else {
         this.seurat <- all.runs[[this.run]]
     }
+    if(separate.data=="me"|separate.data=="lc"){
+        ## Separate ME
+        ## Select cell barcodes containing ME and healthy
+        me.samples <- cell.map[run==eval(this.run)&(condition=="healthy"|condition==eval(separate.data))]
+        this.seurat <- separate.seurat(this.seurat, output.dir=root.dir, cell.map=me.samples)
+        msg.txt <- sprintf("Seprarating cells of patients with %s", separate.data)
+    } else if(separate.data==NULL) {
+        msg.txt <- sprintf("Saving full counts data")
+    } else {
+        stop(msg(error, "There is no such condition in the data."))
+    }
     ## extract sparse count matrix, convert to dense matrix
     counts <- GetAssayData(object=this.seurat, slot="counts")
     summary(rowSums(counts))
@@ -266,13 +279,19 @@ for (this.run in cell.map[, unique(run)]){
 
     counts <- t(counts)
     counts <- as.matrix(counts)
-
+    if(separate.data=="me"){
     ## write counts and selected genes to files
-    counts.file <- file.path(root.dir, sprintf("%s.counts.csv", this.run))
+        counts.file <- file.path(root.dir, sprintf("%s.me.counts.csv", this.run))
+    } else if(separate.data=="me"){
+        counts.file <- file.path(root.dir, sprintf("%s.lc.counts.csv", this.run))
+    } else {
+        counts.file <- file.path(root.dir, sprintf("%s.counts.csv", this.run))
+    }
     write.csv(counts, file=counts.file, append=FALSE, quote=FALSE,
-              row.names=TRUE, col.names=TRUE)
+        row.names=TRUE, col.names=TRUE)
     gc()
 }
+
 
 ## Read unfiltered clontypes data
 clonotypes.raw <- fread(file.path(working.dir, "MECFS001_PBMC_TCRs_all_contig_annotations.csv"), 
@@ -342,7 +361,12 @@ for (this.run in cell.map[, unique(run)]){
     all.metadata <- rbind(all.metadata, this.export)
     this.export[,run:=NULL]
     } else {
-        metadata.file <- file.path(root.dir, sprintf("%s.metadata.csv", this.run))
+        if(separate.data=="me"|separate.data=="lc"){
+            this.export <- this.export[this.export[,condition==eval(separate.data)|condition=="healthy"]]
+            metadata.file <- file.path(root.dir, sprintf("%s.%s.metadata.csv", this.run, separate.data))
+        } else {
+            metadata.file <- file.path(root.dir, sprintf("%s.metadata.csv", this.run))
+        }
     }
     setnames(this.export, c(1, 2, 3), c(" ", "Cell.State", "Cell.Types"))
     write.table(this.export, file=metadata.file, sep = ",", quote=FALSE,

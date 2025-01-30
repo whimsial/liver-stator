@@ -1283,6 +1283,59 @@ sample.seurat <- function(seurat.object, output.dir, cell.map, n.cells.keep) {
     return(seurat.object.filtered)
 }
 
+separate.seurat <- function(seurat.object, output.dir, cell.map) {
+    ## map cell counts to samples
+    cell.counts <- as.data.table(table(seurat.object@meta.data$orig.ident))
+    setnames(cell.counts, old=c("V1", "N"), new=c("sample", "cell.count"))
+
+    ## join with cell.map to bring in conditions
+    cell.map[cell.counts, on="sample", cell.count:=cell.count]
+    cell.map[, cell.count.by.condition := sum(cell.count), by=condition]
+
+    msg.txt <- "Cells in Seurat object were mapped to the following conditions."
+    msg(info, msg.txt)
+    print(cell.map[, .(N.cells=unique(cell.count.by.condition)), by=condition])
+
+    ## sample size for each condition to ensure equal representation in the
+    ## final sample
+    min.cells <- floor(cell.map[, n.cells.keep / uniqueN(condition)])
+    cell.map[, sample.size := ifelse(cell.count.by.condition < min.cells,
+                                     cell.count.by.condition, min.cells)]
+
+    metadata <- setDT(seurat.object@meta.data)
+    cells.to.keep <- NULL
+    for (this.condition in cell.map[, unique(condition)]) {
+        this.cell.map <- cell.map[condition==eval(this.condition)]
+        this.metadata <- metadata[orig.ident %in% this.cell.map$sample]
+        this.sample <- this.metadata[, 
+            sample(barcodes, 
+                   size=this.cell.map[, unique(sample.size)],
+                   replace=FALSE)]
+        cells.to.keep <- c(cells.to.keep, this.sample)
+    }
+
+    ## subset Seurat object
+    seurat.object.filtered <- seurat.object[, cells.to.keep]
+    metadata <- metadata[match(colnames(seurat.object.filtered), barcodes)]
+
+    if (!metadata[, identical(barcodes, colnames(seurat.object.filtered))])
+        stop(msg(error, "Barcodes in counts matrix do not match meta.data."))
+
+    seurat.object.filtered@meta.data <- setDF(metadata)
+
+    seurat.object.filtered <- update.seurat.meta.data(seurat.object.filtered)
+
+    ## run some checks to ensure consistency between meta data and Seurat object
+    if (any(is.na(seurat.object.filtered@meta.data)))
+        stop(msg(error, "NAs detected in meta.data."))
+    if (any(!cells.to.keep %in% seurat.object.filtered@meta.data$barcode)) {
+        msg.txt <- "Cells labeled for removal are in filtered Seurat object."
+        stop(msg(error))
+    }
+
+    return(seurat.object.filtered)
+}
+
 #' Helper function to create a feature plot for the metadata from Seurat object
 plot.features <- function(df, output.dir) {
     p <- ggplot(df, aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) +
