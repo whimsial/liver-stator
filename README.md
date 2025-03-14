@@ -2,7 +2,7 @@
 
 Analysis of scRNA-seq from healthy and pathologic livers using [Stator](https://github.com/AJnsm/Stator).
 
-The main analysis pipeline is implemented in [`pipeline.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.R). It also includes the QC steps written as a collection of R functions in [`rnaseq.functinos.R`](https://github.com/whimsial/liver-stator/blob/main/rnaseq.functions.R) to download and process the raw data from
+The main analysis pipeline is implemented in [`pipeline.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.R), for a newer version of the pipeline developed for ME analysis refer to [`pipeline.me.R`](https://github.com/whimsial/liver-stator/blob/main/pipeline.me.R). It also includes the QC steps written as a collection of R functions in [`rnaseq.functinos.R`](https://github.com/whimsial/liver-stator/blob/main/rnaseq.functions.R) to download and process the raw data from
 [Gene Expression Omnibus](https://www.ncbi.nlm.nih.gov/geo/) followed by the QC steps described below.
 
 Alternatively, if data integration between multiple studies is not needed a
@@ -12,7 +12,7 @@ simplified example script [`example.R`](https://github.com/whimsial/liver-stator
 
 To run the example script on HPC cluster (e.g. EDDIE):
 
-1. login to one of the Wild West nodes.
+1. login to wildwest1 (ssh node2c15).
 2. clone this repository and navigate to it (all subsequent steps should be run from the
 root of this repository).
 2. in the shell session run [`setup.sh`](https://github.com/whimsial/liver-stator/blob/main/setup.sh) to load R and prepare virtual environment for Python.
@@ -38,7 +38,7 @@ The Python code can also be run interactively using Jupyter notebook [`doublets.
 
 I found it useful to run Jupyter notebook inside Python virtual environment on the HPC and connect to it via SSH tunnel:
 
-- start SSH tunnel to HPC mapping one of the open ports (I use port 9999)
+- start SSH tunnel to HPC mapping one of the open ports (I use port 9999, add `-R 9999:localhost:9999` to your ssh command)
 - clone this repository on HPC and navigate to it
 - start python virtual environment: `python3 -m venv venv`
 - activate python virtual env: `source venv/bin/activate`
@@ -54,7 +54,8 @@ If `emptyDrops` fails (likely due to a pre-filtered matrix), a warning will be i
 
 ### Step 2: detection of doublets
 
-The key operation in this step is a call to `scrub_doublets` function from the `scrublet` package which is designed to detect doublets (also known as multiplets) in single-cell RNA sequencing (scRNA-seq) data. Doublets occur when two or more cells are inadvertently sequenced together as a single cell. Identifying and removing doublets is crucial for accurate downstream analysis because they can introduce significant noise and bias into the results.
+There is an option here chosing between 2 packages `scrublet` and `scDblFinder`. The first one is older and implemented in Python, the second one is more modern, implemented in R and tends to discover more doublets. The `scDblFinder` is implemented directly in the pipeline.
+For `scrublet` the key operation in this step is a call to `scrub_doublets` function from the `scrublet` package which is designed to detect doublets (also known as multiplets) in single-cell RNA sequencing (scRNA-seq) data. Doublets occur when two or more cells are inadvertently sequenced together as a single cell. Identifying and removing doublets is crucial for accurate downstream analysis because they can introduce significant noise and bias into the results.
 
 The `scrub_doublets` function processes scRNA-seq data and returns **doublet scores** for each cell, consisting of:
 
@@ -90,6 +91,15 @@ features, map gene IDs to Ensembl, and plot these genes on mean expression vs va
 In this step we also add and label core genes from GATE analysis and check if they appear as highly variable genes in single cell data.
 
 Finally, we write the counts matrix and a list of highly variable genes to files in a format expected by Stator.
+
+### Step 6: run Stator on EDDIE (wildwest node2c15)
+
+First you need to install Nextflow23 via anaconda. Follow `1-eddie-conda-setup.sh` via this [`Tutorial`](https://gist.github.com/laic/7b23e0fd21685f0527c91378fb45c395) but create environment nextflow23 instead
+`conda create --name nextflow23 bioconda::nextflow=23.04.4 conda-forge::singularity`
+`conda activate nextflow23`
+This needs to be setup only once and then can be used for all Stator runs. 
+To run Stator you need mRNA expression counts and list of the highly variable genes. The path to the files containing these should be provided in [`stator.params.json`](https://github.com/whimsial/liver-stator/blob/main/stator.params.json), also please make sure to update number of cells and highly variable genes if changed. The rest of the parameters could be saved as default. 
+Use [`stator.conda.sh`](https://github.com/whimsial/liver-stator/blob/main/stator.conda.sh) to run Stator.
 
 
 ## Known issues

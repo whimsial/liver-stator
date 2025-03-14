@@ -1,5 +1,5 @@
-module load roslin/R/4.4.0 ## module load igmm/apps/R/4.3.2
-module load python/3.11.4
+module load igmm/apps/R/4.4.0
+igmm/apps/python/3.12.3
 python -m ensurepip --upgrade
 python -m venv rnaseq
 source rnaseq/bin/activate
