@@ -82,6 +82,8 @@ in a Seurat object based on gene expression, mitochondrial content, and
 other metadata-based criteria. It also generates a diagnostic plot to
 visually assess the quality of the data after filtering.
 
+Note, to update percentage of mitochondrial DNA removed you just need to update parameter `max.mt=10`, which specifes 10\% by default. This is callable from `qc.seurat` function.
+
 ### Step 5: process and visualize variable genes in a Seurat object
 
 Perform a series of operations on a Seurat object to identify
@@ -94,12 +96,16 @@ Finally, we write the counts matrix and a list of highly variable genes to files
 
 ### Step 6: run Stator on EDDIE (wildwest node2c15)
 
-First you need to install Nextflow23 via anaconda. Follow `1-eddie-conda-setup.sh` via this [`Tutorial`](https://gist.github.com/laic/7b23e0fd21685f0527c91378fb45c395) but create environment nextflow23 instead
-`conda create --name nextflow23 bioconda::nextflow=23.04.4 conda-forge::singularity`
-`conda activate nextflow23`
-This needs to be setup only once and then can be used for all Stator runs. 
-To run Stator you need mRNA expression counts and list of the highly variable genes. The path to the files containing these should be provided in [`stator.params.json`](https://github.com/whimsial/liver-stator/blob/main/stator.params.json), also please make sure to update number of cells and highly variable genes if changed. The rest of the parameters could be saved as default. 
-Use [`stator.conda.sh`](https://github.com/whimsial/liver-stator/blob/main/stator.conda.sh) to run Stator.
+ - First you need to install Nextflow23 via anaconda. Follow `1-eddie-conda-setup.sh` via this [`Tutorial`](https://gist.github.com/laic/7b23e0fd21685f0527c91378fb45c395) but create environment nextflow23 instead
+
+    `conda create --name nextflow23 bioconda::nextflow=23.04.4 conda-forge::singularity`
+
+    `conda activate nextflow23`
+
+    This needs to be setup only once and then can be used for all Stator runs. 
+
+ - To run Stator you need mRNA expression counts and list of the highly variable genes. The path to the files containing these should be provided in [`stator.params.json`](https://github.com/whimsial/liver-stator/blob/main/stator.params.json), also please make sure to update number of cells and highly variable genes if changed. The rest of the parameters could be saved as default. 
+ - Use [`stator.conda.sh`](https://github.com/whimsial/liver-stator/blob/main/stator.conda.sh) to run Stator.
 
 
 ## Known issues
@@ -107,3 +113,19 @@ Use [`stator.conda.sh`](https://github.com/whimsial/liver-stator/blob/main/stato
 While running this analysis I encountered several issues with the newest release of Seurat 5 R package. These are to do with the new layers introduced to the standard Seurat objects. Downgrading to version 4.4.0 together with seurat-object 4.1.4 solved these issues for me and thus I recommend to run this pipeline with these versions.
 
 In time I will open an issue on Seurat's GitHub to ask for help with Seurat 5.
+
+When running Stator sometimes it may fail on the last step. Exact reasons why are not known, but it could be due to memory overload on the wildwest node. Just try to resbmit the job adding `-resume` flad to the last line in `stator.conda.sh`. 
+
+Also sometimes I get Nextflow error 
+
+```Command exit status:                          140
+
+Command output:
+  Modules imported                                                                        Calculating linkage matrix...
+  Linkage matrix calculated
+  Calculating using 64 cores...
+
+Command error:
+  INFO:    Converting SIF file to temporary sandbox...```
+
+Resuming speficying number of cores `--requestedCPU 31` seem to remedy it.
