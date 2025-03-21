@@ -118,14 +118,15 @@ When running Stator sometimes it may fail on the last step. Exact reasons why ar
 
 Also sometimes I get Nextflow error 
 
-```Command exit status:                          140
-
-Command output:
-  Modules imported                                                                        Calculating linkage matrix...
+```
+  Command exit status: 140
+  Command output:
+  Modules imported
+  Calculating linkage matrix...
   Linkage matrix calculated
   Calculating using 64 cores...
-
 Command error:
-  INFO:    Converting SIF file to temporary sandbox...```
+  INFO:    Converting SIF file to temporary sandbox...
+```
 
 Resuming speficying number of cores `--requestedCPU 31` seem to remedy it.
